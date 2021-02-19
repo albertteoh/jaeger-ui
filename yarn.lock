@@ -775,6 +775,13 @@
   dependencies:
     regenerator-runtime "^0.12.0"
 
+"@babel/runtime@^7.12.5":
+  version "7.12.18"
+  resolved "https://registry.yarnpkg.com/@babel/runtime/-/runtime-7.12.18.tgz#af137bd7e7d9705a412b3caaf991fe6aaa97831b"
+  integrity sha512-BogPQ7ciE6SYAUPtlm9tWbgI9+2AgqSam6QivMgXgAT+fKbgppaj4ZX15MHeLC1PVF5sNk70huBu20XxWOs8Cg==
+  dependencies:
+    regenerator-runtime "^0.13.4"
+
 "@babel/template@^7.1.0", "@babel/template@^7.1.2", "@babel/template@^7.2.2":
   version "7.2.2"
   resolved "https://registry.yarnpkg.com/@babel/template/-/template-7.2.2.tgz#005b3fdf0ed96e88041330379e0da9a708eb2907"
@@ -1524,10 +1531,12 @@
   version "4.14.123"
   resolved "https://registry.yarnpkg.com/@types/lodash/-/lodash-4.14.123.tgz#39be5d211478c8dd3bdae98ee75bb7efe4abfe4d"
 
-"@types/match-sorter@^2.3.0":
-  version "2.3.0"
-  resolved "https://registry.yarnpkg.com/@types/match-sorter/-/match-sorter-2.3.0.tgz#902b927bc9c7f10863a9973da8deab48787dfc91"
-  integrity sha512-oNHiGln5wL4/K5uvfkn20ZXdoSH3DyG8aN7pVjtwjVTYdJDdedJD/gKg4qOBhVnLtiPlUy2H3i+OHjBQnpdf9Q==
+"@types/match-sorter@^6.0.0":
+  version "6.0.0"
+  resolved "https://registry.yarnpkg.com/@types/match-sorter/-/match-sorter-6.0.0.tgz#434355915f5fb5bfb5f7e1224cd9c4399879179c"
+  integrity sha512-/B8BLck7dy+vQQedYvrTw2f+U02KghNCMLocjRSWtHhCKE1OeoAmOWiLGAPs96qacT9bSJF4HmJNyijiy5bycA==
+  dependencies:
+    match-sorter "*"
 
 "@types/memoize-one@4.1.1":
   version "4.1.1"
@@ -7939,6 +7948,14 @@ map-visit@^1.0.0:
   dependencies:
     object-visit "^1.0.0"
 
+match-sorter@*:
+  version "6.3.0"
+  resolved "https://registry.yarnpkg.com/match-sorter/-/match-sorter-6.3.0.tgz#454a1b31ed218cddbce6231a0ecb5fdc549fed01"
+  integrity sha512-efYOf/wUpNb8FgNY+cOD2EIJI1S5I7YPKsw0LBp7wqPh5pmMS6i/wr3ZWwfwrAw1NvqTA2KUReVRWDX84lUcOQ==
+  dependencies:
+    "@babel/runtime" "^7.12.5"
+    remove-accents "0.4.2"
+
 match-sorter@^3.1.1:
   version "3.1.1"
   resolved "https://registry.yarnpkg.com/match-sorter/-/match-sorter-3.1.1.tgz#a49889245da80a3d6a032eca0c18e21f265bb42a"
@@ -11032,6 +11049,11 @@ regenerator-runtime@^0.11.0:
 regenerator-runtime@^0.12.0:
   version "0.12.1"
   resolved "https://registry.yarnpkg.com/regenerator-runtime/-/regenerator-runtime-0.12.1.tgz#fa1a71544764c036f8c49b13a08b2594c9f8a0de"
+
+regenerator-runtime@^0.13.4:
+  version "0.13.7"
+  resolved "https://registry.yarnpkg.com/regenerator-runtime/-/regenerator-runtime-0.13.7.tgz#cac2dacc8a1ea675feaabaeb8ae833898ae46f55"
+  integrity sha512-a54FxoJDIr27pgf7IgeQGxmqUNYrcV338lf/6gH456HZ/PhX+5BcwHXG9ajESmwe6WRO0tAzRUrRmNONWgkrew==
 
 regenerator-transform@^0.13.4:
   version "0.13.4"
