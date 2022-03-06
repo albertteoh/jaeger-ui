@@ -8,7 +8,7 @@
    1. The PR title should match the format "Prepare release vX.Y.Z".
    1. CHANGELOG.md
       - Change the version of the current release from "Next (unreleased)" to "vX.Y.Z (YYYY-MM-DD)" where "vX.Y.Z" is the semver for this release.
-      - Make sure all relevant changes made since the last release are present and listed under the current release. [`scripts/get-changelog.js`](https://github.com/jaegertracing/jaeger-ui/blob/52780c897f21131472de9b81c96ebd63853917ee/scripts/get-changelog.js) might be useful.
+      - Under the current release, add a curated list of notable changes and links to PRs. Do not simply dump git log, select the changes that affect the users. To obtain the list of all changes run `make changelog`.
       - If necessary, add a note detailing any impact to externally facing APIs.
    1. Update `packages/jaeger-ui/package.json#version` to refer to the version being released.
 1. Create a GitHub release.
