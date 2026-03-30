@@ -1,19 +1,10 @@
 // Copyright (c) 2019 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import * as React from 'react';
-import { History as RouterHistory, Location } from 'history';
+import { useNavigate, useLocation } from 'react-router-dom';
+import type { Location } from 'react-router-dom';
+import { useMemo } from 'react';
 import _get from 'lodash/get';
 import { bindActionCreators, Dispatch } from 'redux';
 import { connect } from 'react-redux';
@@ -25,7 +16,7 @@ import SidePanel from './SidePanel';
 import { getUrl, getUrlState, sanitizeUrlState, ROUTE_PATH } from './url';
 import ErrorMessage from '../common/ErrorMessage';
 import LoadingIndicator from '../common/LoadingIndicator';
-import { extractUiFindFromState, TExtractUiFindFromStateReturn } from '../common/UiFindInput';
+import { parseUiFind, TExtractUiFindFromStateReturn } from '../common/UiFindInput';
 import { getUrl as getSearchUrl } from '../SearchTracePage/url';
 import ddgActions from '../../actions/ddg';
 import * as jaegerApiActions from '../../actions/jaeger-api';
@@ -37,22 +28,36 @@ import {
   EDdgDensity,
   EDirection,
   EViewModifier,
+  TDdgModel,
   TDdgModelParams,
   TDdgSparseUrlState,
   TDdgVertex,
 } from '../../model/ddg/types';
 import { encode, encodeDistance } from '../../model/ddg/visibility-codec';
-import { getConfigValue } from '../../utils/config/get-config';
+import getConfig from '../../utils/config/get-config';
 import { ReduxState } from '../../types';
 import { TDdgStateEntry } from '../../types/TDdgState';
 
+import { localeStringComparator } from '../../utils/sort';
+
 import './index.css';
+import { ApiError } from '../../types/api-error';
+import withRouteProps from '../../utils/withRouteProps';
+import { useServices, useSpanNames } from '../../hooks/useTraceDiscovery';
+
+interface IDoneState {
+  state: typeof fetchedState.DONE;
+  model: TDdgModel;
+  viewModifiers: Map<number, number>;
+}
+interface IErrorState {
+  state: typeof fetchedState.ERROR;
+  error: ApiError;
+}
 
 export type TDispatchProps = {
   addViewModifier?: (kwarg: TDdgModelParams & { viewModifier: number; visibilityIndices: number[] }) => void;
   fetchDeepDependencyGraph?: (query: TDdgModelParams) => void;
-  fetchServices?: () => void;
-  fetchServiceServerOps?: (service: string) => void;
   removeViewModifierFromIndices?: (
     kwarg: TDdgModelParams & { viewModifier: number; visibilityIndices: number[] }
   ) => void;
@@ -61,21 +66,26 @@ export type TDispatchProps = {
 export type TReduxProps = TExtractUiFindFromStateReturn & {
   graph: GraphModel | undefined;
   graphState?: TDdgStateEntry;
-  serverOpsForService?: Record<string, string[]>;
-  services?: string[] | null;
   showOp: boolean;
   urlState: TDdgSparseUrlState;
+};
+
+export type THookProps = {
+  services: string[];
+  serverOps?: string[];
 };
 
 export type TOwnProps = {
   baseUrl: string;
   extraUrlArgs?: { [key: string]: unknown };
-  history: RouterHistory;
+  navigate: ReturnType<typeof useNavigate>;
   location: Location;
   showSvcOpsHeader: boolean;
 };
 
-export type TProps = TDispatchProps & TReduxProps & TOwnProps;
+export type TExternalProps = Partial<Omit<TOwnProps, 'navigate' | 'location'>>;
+
+export type TProps = TDispatchProps & TReduxProps & TOwnProps & THookProps;
 
 type TState = {
   selectedVertex?: TDdgVertex;
@@ -101,21 +111,6 @@ export class DeepDependencyGraphPageImpl extends React.PureComponent<TProps, TSt
   constructor(props: TProps) {
     super(props);
     DeepDependencyGraphPageImpl.fetchModelIfStale(props);
-
-    const { fetchServices, fetchServiceServerOps, serverOpsForService, services, urlState } = props;
-    const { service } = urlState;
-
-    if (!services && fetchServices) {
-      fetchServices();
-    }
-    if (
-      service &&
-      serverOpsForService &&
-      !Reflect.has(serverOpsForService, service) &&
-      fetchServiceServerOps
-    ) {
-      fetchServiceServerOps(service);
-    }
   }
 
   componentDidUpdate() {
@@ -174,7 +169,7 @@ export class DeepDependencyGraphPageImpl extends React.PureComponent<TProps, TSt
     const { visEncoding } = this.props.urlState;
 
     if (graphState && graphState.state === fetchedState.DONE) {
-      const { model: ddgModel } = graphState;
+      const { model: ddgModel } = graphState as IDoneState;
 
       this.updateUrlState({
         visEncoding: encodeDistance({
@@ -192,10 +187,6 @@ export class DeepDependencyGraphPageImpl extends React.PureComponent<TProps, TSt
   };
 
   setService = (service: string) => {
-    const { fetchServiceServerOps, serverOpsForService } = this.props;
-    if (serverOpsForService && !Reflect.has(serverOpsForService, service) && fetchServiceServerOps) {
-      fetchServiceServerOps(service);
-    }
     this.updateUrlState({ operation: undefined, service, visEncoding: undefined });
     trackSetService();
   };
@@ -242,11 +233,11 @@ export class DeepDependencyGraphPageImpl extends React.PureComponent<TProps, TSt
   };
 
   updateUrlState = (newValues: Partial<TDdgSparseUrlState>) => {
-    const { baseUrl, extraUrlArgs, graphState, history, uiFind, urlState } = this.props;
+    const { baseUrl, extraUrlArgs, graphState, navigate, uiFind, urlState } = this.props;
     const getUrlArg = { uiFind, ...urlState, ...newValues, ...extraUrlArgs };
     const hash = _get(graphState, 'model.hash');
     if (hash) getUrlArg.hash = hash;
-    history.push(getUrl(getUrlArg, baseUrl));
+    navigate(getUrl(getUrlArg, baseUrl));
   };
 
   render() {
@@ -256,7 +247,7 @@ export class DeepDependencyGraphPageImpl extends React.PureComponent<TProps, TSt
       extraUrlArgs,
       graph,
       graphState,
-      serverOpsForService,
+      serverOps,
       services,
       showOp,
       uiFind,
@@ -265,17 +256,19 @@ export class DeepDependencyGraphPageImpl extends React.PureComponent<TProps, TSt
     } = this.props;
     const { density, operation, service, visEncoding } = urlState;
     const distanceToPathElems =
-      graphState && graphState.state === fetchedState.DONE ? graphState.model.distanceToPathElems : undefined;
+      graphState && graphState.state === fetchedState.DONE
+        ? (graphState as IDoneState).model.distanceToPathElems
+        : undefined;
     const uiFindMatches = graph && graph.getVisibleUiFindMatches(uiFind, visEncoding);
     const hiddenUiFindMatches = graph && graph.getHiddenUiFindMatches(uiFind, visEncoding);
 
-    let content: React.ReactElement | null = null;
-    let wrapperClassName: string = '';
+    let content: React.ReactElement | null;
+    let wrapperClassName = '';
     if (!graphState) {
       content = <h1>Enter query above</h1>;
     } else if (graphState.state === fetchedState.DONE && graph) {
       const { edges, vertices } = graph.getVisible(visEncoding);
-      const { viewModifiers } = graphState;
+      const { viewModifiers } = graphState as IDoneState;
       const { edges: edgesViewModifiers, vertices: verticesViewModifiers } = graph.getDerivedViewModifiers(
         visEncoding,
         viewModifiers
@@ -313,8 +306,8 @@ export class DeepDependencyGraphPageImpl extends React.PureComponent<TProps, TSt
           </>
         );
       } else if (
-        graphState.model.distanceToPathElems.has(-1) ||
-        graphState.model.distanceToPathElems.has(1)
+        (graphState as IDoneState).model.distanceToPathElems.has(-1) ||
+        (graphState as IDoneState).model.distanceToPathElems.has(1)
       ) {
         content = (
           <>
@@ -323,7 +316,7 @@ export class DeepDependencyGraphPageImpl extends React.PureComponent<TProps, TSt
           </>
         );
       } else {
-        const lookback = getConfigValue('search.maxLookback.value');
+        const lookback = getConfig().search?.maxLookback?.value;
         const checkLink = getSearchUrl({
           lookback,
           minDuration: '0ms',
@@ -349,7 +342,7 @@ export class DeepDependencyGraphPageImpl extends React.PureComponent<TProps, TSt
     } else if (graphState.state === fetchedState.ERROR) {
       content = (
         <>
-          <ErrorMessage error={graphState.error} className="ub-m4" />
+          <ErrorMessage error={(graphState as IErrorState).error} className="ub-m4" />
           <p className="Ddg--center">If you are using an adblocker, whitelist Jaeger and retry.</p>
         </>
       );
@@ -371,7 +364,7 @@ export class DeepDependencyGraphPageImpl extends React.PureComponent<TProps, TSt
             distanceToPathElems={distanceToPathElems}
             hiddenUiFindMatches={hiddenUiFindMatches}
             operation={operation}
-            operations={serverOpsForService && serverOpsForService[service || '']}
+            operations={serverOps}
             service={service}
             services={services}
             setDensity={this.setDensity}
@@ -394,8 +387,8 @@ export class DeepDependencyGraphPageImpl extends React.PureComponent<TProps, TSt
 
 // export for tests
 export function mapStateToProps(state: ReduxState, ownProps: TOwnProps): TReduxProps {
-  const { services: stServices } = state;
-  const { services, serverOpsForService } = stServices;
+  // Services and operations are now fetched using React Query hooks (useServices/useServerSpanNames)
+  // instead of Redux state. See the default export wrapper component below.
   const urlState = getUrlState(ownProps.location.search);
   const { density, operation, service, showOp: urlStateShowOp } = urlState;
   const showOp = urlStateShowOp !== undefined ? urlStateShowOp : operation !== undefined;
@@ -405,37 +398,49 @@ export function mapStateToProps(state: ReduxState, ownProps: TOwnProps): TReduxP
   }
   let graph: GraphModel | undefined;
   if (graphState && graphState.state === fetchedState.DONE) {
-    graph = makeGraph(graphState.model, showOp, density);
+    graph = makeGraph((graphState as IDoneState).model, showOp, density);
   }
   return {
     graph,
     graphState,
-    serverOpsForService,
-    services,
     showOp,
     urlState: sanitizeUrlState(urlState, _get(graphState, 'model.hash')),
-    ...extractUiFindFromState(state),
+    uiFind: parseUiFind(ownProps.location.search),
   };
 }
 
 // export for tests
 export function mapDispatchToProps(dispatch: Dispatch<ReduxState>): TDispatchProps {
-  const { fetchDeepDependencyGraph, fetchServiceServerOps, fetchServices } = bindActionCreators(
-    jaegerApiActions,
-    dispatch
-  );
+  const { fetchDeepDependencyGraph } = bindActionCreators(jaegerApiActions, dispatch);
   const { addViewModifier, removeViewModifierFromIndices } = bindActionCreators(ddgActions, dispatch);
 
   return {
     addViewModifier,
     fetchDeepDependencyGraph,
-    fetchServiceServerOps,
-    fetchServices,
     removeViewModifierFromIndices,
   };
 }
 
-export default connect(
-  mapStateToProps,
-  mapDispatchToProps
-)(DeepDependencyGraphPageImpl);
+const ConnectedDeepDependencyGraphPageImpl = withRouteProps(
+  connect(mapStateToProps, mapDispatchToProps)(DeepDependencyGraphPageImpl)
+) as React.ComponentType<Omit<TOwnProps, 'location' | 'navigate'> & THookProps>;
+
+export default function DeepDependencyGraphPage({
+  baseUrl = ROUTE_PATH,
+  showSvcOpsHeader = true,
+  ...restProps
+}: TExternalProps) {
+  const { data: services = [] } = useServices();
+  const location = useLocation();
+  const urlState = getUrlState(location.search);
+  const { service } = urlState;
+  const { data: serverOpsData = [] } = useSpanNames(service || null, 'server');
+  const serverOps = useMemo(
+    () => serverOpsData.map(op => op.name).sort(localeStringComparator),
+    [serverOpsData]
+  );
+
+  const props = { baseUrl, showSvcOpsHeader, ...restProps };
+
+  return <ConnectedDeepDependencyGraphPageImpl {...props} services={services} serverOps={serverOps} />;
+}

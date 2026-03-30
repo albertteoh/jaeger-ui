@@ -1,16 +1,5 @@
 // Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import * as React from 'react';
 import _get from 'lodash/get';
@@ -31,9 +20,13 @@ export type TDecorationFromState = {
 
 export default function extractDecorationFromState(
   state: ReduxState,
-  { service, operation }: { service: string; operation?: string | string[] | null }
+  {
+    service,
+    operation,
+    search = '',
+  }: { service: string; operation?: string | string[] | null; search?: string }
 ): TDecorationFromState {
-  const { decoration } = queryString.parse(state.router.location.search);
+  const { decoration } = queryString.parse(search);
   const decorationID = Array.isArray(decoration) ? decoration[0] : decoration;
 
   if (!decorationID) return {};
@@ -51,14 +44,12 @@ export default function extractDecorationFromState(
         key={`${service}\t${operation}`}
         backgroundHue={120}
         decorationHue={0}
-        maxValue={decorationMax}
+        maxValue={decorationMax as unknown as number}
         strokeWidth={(PROGRESS_BAR_STROKE_WIDTH / RADIUS) * 50}
         text={`${decorationValue}`}
         value={decorationValue}
       />
-    ) : (
-      undefined
-    );
+    ) : undefined;
 
   return {
     decorationProgressbar,

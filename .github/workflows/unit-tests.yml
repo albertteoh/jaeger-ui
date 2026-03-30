@@ -1,27 +1,43 @@
-name: "Unit Tests"
+name: 'Unit Tests'
 
-on: [push, pull_request]
+on:
+  merge_group:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ (github.event.pull_request && github.event.pull_request.number) || github.ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   unit-tests:
-    strategy:
-      fail-fast: true
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-node@v2.1.4
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: '10'
-      - name: install yarn
+          cache: npm
+          node-version-file: 'package.json'
+      - name: Upgrade npm
         run: |
-          curl -o- -L https://yarnpkg.com/install.sh | bash
-          echo $HOME/.yarn/bin >>"$GITHUB_PATH"
-          echo $HOME/.config/yarn/global/node_modules/.bin >>"$GITHUB_PATH"
-      - run: yarn install --frozen-lockfile
-      - run: yarn lint
-      - run: yarn build
-      - run: yarn coverage
+          NPM_VERSION=$(node -p "require('./package.json').engines.npm.replace(/[^0-9.]/g, '')")
+          npm install -g npm@$NPM_VERSION
+      - run: npm --version
+      - run: npm ci
+      - run: npm ls --all
+      - run: npm run coverage
       - name: Upload coverage to codecov.io
-        run: |
-          yarn global add codecov
-          codecov
+        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
+        with:
+          fail_ci_if_error: true
+          verbose: true
+          # Using upload token helps against rate limiting errors.
+          # Cannot define it as secret as we need it accessible from forks.
+          # See https://github.com/codecov/codecov-action/issues/837
+          token: 31c3122b-7b49-4267-a117-8c9354a97119

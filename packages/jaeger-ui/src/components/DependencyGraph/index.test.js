@@ -1,30 +1,41 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
-import React from 'react';
-import { Tabs } from 'antd';
-import { shallow } from 'enzyme';
+import { render, screen, act, cleanup } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import { MemoryRouter } from 'react-router-dom';
+import * as constants from '../../utils/constants';
 
-import DAG from './DAG';
-import DependencyForceGraph from './DependencyForceGraph';
-import {
-  DependencyGraphPageImpl as DependencyGraph,
-  GRAPH_TYPES,
-  mapDispatchToProps,
-  mapStateToProps,
-} from './index';
-import LoadingIndicator from '../common/LoadingIndicator';
+import { DependencyGraphPageImpl as DependencyGraph, mapDispatchToProps, mapStateToProps } from './index';
+
+let lastDAGOptionsProps = {};
+let lastDAGProps = {};
+
+jest.mock('./DAG', () => {
+  return function MockDAG(props) {
+    lastDAGProps = props;
+    return <div data-testid="dag-component" />;
+  };
+});
+
+jest.mock('./DAGOptions', () => {
+  return function MockDAGOptions(props) {
+    lastDAGOptionsProps = props;
+    return <div data-testid="dag-options" />;
+  };
+});
+
+jest.mock('../common/LoadingIndicator', () => {
+  return function MockLoadingIndicator(props) {
+    return <div data-testid="loading-indicator" {...props} />;
+  };
+});
+
+jest.mock('../common/ErrorMessage', () => {
+  return function MockErrorMessage(props) {
+    return <div data-testid="error-message" {...props} />;
+  };
+});
 
 const childId = 'boomya';
 const parentId = 'elder-one';
@@ -46,53 +57,385 @@ const state = {
 
 const props = mapStateToProps(state);
 
-describe('<DependencyGraph>', () => {
-  let wrapper;
+const renderComponent = (extraProps = {}) =>
+  render(
+    <MemoryRouter>
+      <DependencyGraph {...props} fetchDependencies={() => {}} {...extraProps} />
+    </MemoryRouter>
+  );
 
+describe('<DependencyGraph>', () => {
   beforeEach(() => {
-    wrapper = shallow(<DependencyGraph {...props} fetchDependencies={() => {}} />);
+    renderComponent();
   });
 
   it('does not explode', () => {
-    expect(wrapper.length).toBe(1);
+    expect(screen.getByTestId('dag-options')).toBeInTheDocument();
   });
 
   it('shows a loading indicator when loading data', () => {
-    expect(wrapper.find(LoadingIndicator).length).toBe(0);
-    wrapper.setProps({ loading: true });
-    expect(wrapper.find(LoadingIndicator).length).toBe(1);
+    const { rerender } = renderComponent();
+    expect(screen.queryByTestId('loading-indicator')).not.toBeInTheDocument();
+
+    rerender(
+      <MemoryRouter>
+        <DependencyGraph {...props} fetchDependencies={() => {}} loading />
+      </MemoryRouter>
+    );
+    expect(screen.getByTestId('loading-indicator')).toBeInTheDocument();
   });
 
   it('shows an error message when passed error information', () => {
     const error = {};
-    expect(wrapper.find({ error: expect.anything() }).length).toBe(0);
-    wrapper.setProps({ error });
-    expect(wrapper.find({ error }).length).toBe(1);
+    const { rerender } = renderComponent();
+    expect(screen.queryByTestId('error-message')).not.toBeInTheDocument();
+
+    rerender(
+      <MemoryRouter>
+        <DependencyGraph {...props} fetchDependencies={() => {}} error={error} />
+      </MemoryRouter>
+    );
+    expect(screen.getByTestId('error-message')).toBeInTheDocument();
   });
 
   it('shows a message where there is nothing to visualize', () => {
-    wrapper.setProps({ links: null, nodes: null });
-    const matchTest = expect.stringMatching(/no.*?found/i);
-    expect(wrapper.text()).toEqual(matchTest);
+    renderComponent({ links: null, nodes: null });
+    expect(screen.getByText(/no.*?found/i)).toBeInTheDocument();
   });
 
-  describe('graph types', () => {
-    it('renders a menu with options for the graph types', () => {
-      expect(wrapper.find(Tabs.TabPane).length).toBe(Object.keys(GRAPH_TYPES).length);
-      expect(wrapper.find({ tab: GRAPH_TYPES.FORCE_DIRECTED.name }).length).toBe(1);
-      expect(wrapper.find({ tab: GRAPH_TYPES.DAG.name }).length).toBe(1);
+  describe('DAG options', () => {
+    beforeEach(() => {
+      jest.resetAllMocks();
+      jest.spyOn(constants, 'getAppEnvironment').mockReturnValue('development');
     });
 
-    it('renders a force graph when FORCE_GRAPH is the selected type', () => {
-      wrapper.simulate('change', GRAPH_TYPES.FORCE_DIRECTED.type);
-      expect(wrapper.state('graphType')).toBe(GRAPH_TYPES.FORCE_DIRECTED.type);
-      expect(wrapper.find(DependencyForceGraph).length).toBe(1);
+    it('initializes with default values', () => {
+      expect(lastDAGOptionsProps.selectedService).toBeUndefined();
+      expect(lastDAGOptionsProps.selectedLayout).toBe('dot');
+      expect(lastDAGOptionsProps.selectedDepth).toBe(5);
     });
 
-    it('renders a DAG graph when DAG is the selected type', () => {
-      wrapper.simulate('change', GRAPH_TYPES.DAG.type);
-      expect(wrapper.state('graphType')).toBe(GRAPH_TYPES.DAG.type);
-      expect(wrapper.find(DAG).length).toBe(1);
+    it('handles service selection', () => {
+      const service = 'test-service';
+      act(() => {
+        lastDAGOptionsProps.onServiceSelect(service);
+      });
+      expect(lastDAGOptionsProps.selectedService).toBe(service);
+    });
+
+    it('handles layout selection', () => {
+      const layout = 'sfdp';
+      act(() => {
+        lastDAGOptionsProps.onLayoutSelect(layout);
+      });
+      expect(lastDAGOptionsProps.selectedLayout).toBe(layout);
+    });
+
+    it('calls updateLayout when dependencies prop changes', () => {
+      const manyDependencies = Array(1001)
+        .fill()
+        .map((_, i) => ({ callCount: 1, child: `child-${i}`, parent: 'parent' }));
+
+      const { rerender } = renderComponent();
+      expect(lastDAGOptionsProps.selectedLayout).toBe('dot');
+
+      act(() => {
+        rerender(
+          <MemoryRouter>
+            <DependencyGraph {...props} fetchDependencies={() => {}} dependencies={manyDependencies} />
+          </MemoryRouter>
+        );
+      });
+
+      expect(lastDAGOptionsProps.selectedLayout).toBe('sfdp');
+    });
+
+    it('updates layout based on dependencies size', () => {
+      renderComponent({ dependencies });
+      expect(lastDAGOptionsProps.selectedLayout).toBe('dot');
+
+      const manyDependencies = Array(1001)
+        .fill()
+        .map((_, i) => ({
+          callCount: 1,
+          child: `child-${i}`,
+          parent: 'parent',
+        }));
+      renderComponent({ dependencies: manyDependencies });
+      expect(lastDAGOptionsProps.selectedLayout).toBe('sfdp');
+    });
+
+    it('updates layout based on dependencies size with state tracking', () => {
+      renderComponent({ dependencies });
+      expect(lastDAGOptionsProps.selectedLayout).toBe('dot');
+      act(() => {
+        lastDAGOptionsProps.onLayoutSelect('sfdp');
+      });
+      expect(lastDAGOptionsProps.selectedLayout).toBe('sfdp');
+
+      const { rerender } = renderComponent({ dependencies });
+      act(() => {
+        rerender(
+          <MemoryRouter>
+            <DependencyGraph {...props} fetchDependencies={() => {}} dependencies={dependencies} />
+          </MemoryRouter>
+        );
+      });
+      expect(lastDAGOptionsProps.selectedLayout).toBe('dot');
+    });
+
+    it('handles depth change with numeric value', () => {
+      const depth = 3;
+      act(() => {
+        lastDAGOptionsProps.onDepthChange(depth);
+      });
+      expect(lastDAGOptionsProps.selectedDepth).toBe(depth);
+    });
+
+    it('handles depth change with negative value', () => {
+      const depth = -1;
+      act(() => {
+        lastDAGOptionsProps.onDepthChange(depth);
+      });
+      expect(lastDAGOptionsProps.selectedDepth).toBe(0);
+    });
+
+    it('handles depth change with null value', () => {
+      act(() => {
+        lastDAGOptionsProps.onDepthChange(null);
+      });
+      expect(lastDAGOptionsProps.selectedDepth).toBeUndefined();
+      expect(lastDAGProps.selectedDepth).toBe(0);
+    });
+
+    it('handles depth change with undefined value', () => {
+      act(() => {
+        lastDAGOptionsProps.onDepthChange(undefined);
+      });
+      expect(lastDAGOptionsProps.selectedDepth).toBeUndefined();
+    });
+
+    it('handles reset', () => {
+      act(() => {
+        lastDAGOptionsProps.onServiceSelect('test-service');
+        lastDAGOptionsProps.onDepthChange(3);
+      });
+      expect(lastDAGOptionsProps.selectedService).toBe('test-service');
+      expect(lastDAGOptionsProps.selectedDepth).toBe(3);
+
+      act(() => {
+        lastDAGOptionsProps.onReset();
+      });
+      expect(lastDAGOptionsProps.selectedService).toBeUndefined();
+      expect(lastDAGOptionsProps.selectedDepth).toBe(5);
+    });
+
+    it('uses sfdp layout for large dependency graphs', () => {
+      const manyDependencies = Array(1001)
+        .fill()
+        .map((_, i) => ({
+          callCount: 1,
+          child: `child-${i}`,
+          parent: 'parent',
+        }));
+
+      renderComponent({ dependencies: manyDependencies });
+      expect(lastDAGOptionsProps.selectedLayout).toBe('sfdp');
+    });
+
+    describe('timer-dependent behaviors', () => {
+      beforeEach(() => {
+        cleanup();
+        jest.useFakeTimers();
+        renderComponent();
+      });
+
+      afterEach(() => {
+        // Clean up and restore real timers
+        jest.runOnlyPendingTimers();
+        jest.useRealTimers();
+      });
+
+      it('debounces depth changes', () => {
+        const depth = 3;
+        act(() => {
+          lastDAGOptionsProps.onDepthChange(depth);
+        });
+        expect(lastDAGOptionsProps.selectedDepth).toBe(depth);
+        expect(lastDAGProps.selectedDepth).toBe(5);
+
+        act(() => {
+          jest.advanceTimersByTime(1000);
+        });
+
+        expect(lastDAGProps.selectedDepth).toBe(depth);
+      });
+    });
+
+    it('handles sample dataset type change', async () => {
+      const selectedSampleDatasetType = 'Small Graph';
+      await act(async () => {
+        await lastDAGOptionsProps.onSampleDatasetTypeChange(selectedSampleDatasetType);
+      });
+
+      expect(lastDAGOptionsProps.selectedSampleDatasetType).toBe(selectedSampleDatasetType);
+      expect(lastDAGOptionsProps.selectedLayout).toBe('dot');
+
+      await act(async () => {
+        await lastDAGOptionsProps.onSampleDatasetTypeChange(null);
+      });
+      expect(lastDAGOptionsProps.selectedSampleDatasetType).toBe(null);
+
+      await act(async () => {
+        await lastDAGOptionsProps.onSampleDatasetTypeChange(null);
+      });
+    });
+
+    it('passes computed match count to DAGOptions based on uiFind from URL and dependencies', () => {
+      const sampleDependencies = [
+        { parent: 'serviceA', child: 'serviceB', callCount: 10 },
+        { parent: 'serviceB', child: 'anotherService', callCount: 5 },
+        { parent: 'serviceA', child: 'anotherService', callCount: 2 },
+      ];
+
+      render(
+        <MemoryRouter initialEntries={['/?uiFind=service']}>
+          <DependencyGraph {...props} fetchDependencies={() => {}} dependencies={sampleDependencies} />
+        </MemoryRouter>
+      );
+      expect(lastDAGOptionsProps.matchCount).toBe(3);
+
+      cleanup();
+
+      render(
+        <MemoryRouter initialEntries={['/?uiFind=another']}>
+          <DependencyGraph {...props} fetchDependencies={() => {}} dependencies={sampleDependencies} />
+        </MemoryRouter>
+      );
+      expect(lastDAGOptionsProps.matchCount).toBe(1);
+
+      cleanup();
+
+      render(
+        <MemoryRouter initialEntries={['/']}>
+          <DependencyGraph {...props} fetchDependencies={() => {}} dependencies={sampleDependencies} />
+        </MemoryRouter>
+      );
+      expect(lastDAGOptionsProps.matchCount).toBe(0);
+    });
+  });
+
+  describe('<DependencyGraph> filtering logic (findConnectedServices)', () => {
+    const baseProps = {
+      fetchDependencies: jest.fn(),
+      nodes: [{ key: 'dummyNode' }],
+      links: [{ from: 'dummyNode', to: 'dummyNode', label: '1' }],
+      loading: false,
+      error: null,
+      dependencies: [],
+    };
+
+    // Select a service and depth then advance the debounce so DAG receives the updated graph data.
+    const selectServiceAndDepth = (service, depth) => {
+      act(() => {
+        lastDAGOptionsProps.onServiceSelect(service);
+        lastDAGOptionsProps.onDepthChange(depth);
+      });
+      act(() => {
+        jest.advanceTimersByTime(1000);
+      });
+    };
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should include direct children when parent is selected', () => {
+      const testDependencies = [{ parent: 'A', child: 'B', callCount: 1 }];
+
+      render(
+        <MemoryRouter>
+          <DependencyGraph {...baseProps} dependencies={testDependencies} />
+        </MemoryRouter>
+      );
+      selectServiceAndDepth('A', 1);
+
+      expect(lastDAGProps.data.nodes).toEqual(expect.arrayContaining([{ key: 'A' }, { key: 'B' }]));
+      expect(lastDAGProps.data.edges).toEqual(expect.arrayContaining([{ from: 'A', to: 'B', label: '1' }]));
+    });
+
+    it('should include direct parents when child is selected', () => {
+      const testDependencies = [{ parent: 'A', child: 'B', callCount: 1 }];
+
+      render(
+        <MemoryRouter>
+          <DependencyGraph {...baseProps} dependencies={testDependencies} />
+        </MemoryRouter>
+      );
+      selectServiceAndDepth('B', 1);
+
+      expect(lastDAGProps.data.nodes).toEqual(expect.arrayContaining([{ key: 'A' }, { key: 'B' }]));
+      expect(lastDAGProps.data.edges).toEqual(expect.arrayContaining([{ from: 'A', to: 'B', label: '1' }]));
+    });
+
+    it('should not re-add already visited nodes (outgoing)', () => {
+      const testDependencies = [
+        { parent: 'A', child: 'B', callCount: 1 },
+        { parent: 'B', child: 'A', callCount: 1 },
+      ];
+
+      render(
+        <MemoryRouter>
+          <DependencyGraph {...baseProps} dependencies={testDependencies} />
+        </MemoryRouter>
+      );
+      selectServiceAndDepth('A', 2);
+
+      expect(lastDAGProps.data.nodes).toHaveLength(2);
+      expect(lastDAGProps.data.nodes).toEqual(expect.arrayContaining([{ key: 'A' }, { key: 'B' }]));
+      expect(lastDAGProps.data.edges).toHaveLength(1);
+      expect(lastDAGProps.data.edges).toEqual(expect.arrayContaining([{ from: 'A', to: 'B', label: '1' }]));
+    });
+
+    it('should not re-add already visited nodes (incoming)', () => {
+      const testDependencies = [
+        { parent: 'A', child: 'B', callCount: 1 },
+        { parent: 'B', child: 'A', callCount: 1 },
+      ];
+
+      render(
+        <MemoryRouter>
+          <DependencyGraph {...baseProps} dependencies={testDependencies} />
+        </MemoryRouter>
+      );
+      selectServiceAndDepth('B', 2);
+
+      expect(lastDAGProps.data.nodes).toHaveLength(2);
+      expect(lastDAGProps.data.nodes).toEqual(expect.arrayContaining([{ key: 'A' }, { key: 'B' }]));
+      expect(lastDAGProps.data.edges).toHaveLength(1);
+      expect(lastDAGProps.data.edges).toEqual(expect.arrayContaining([{ from: 'A', to: 'B', label: '1' }]));
+    });
+
+    it('should ignore calls not connected to the selected service', () => {
+      const testDependencies = [
+        { parent: 'A', child: 'B', callCount: 1 },
+        { parent: 'C', child: 'D', callCount: 1 },
+      ];
+
+      render(
+        <MemoryRouter>
+          <DependencyGraph {...baseProps} dependencies={testDependencies} />
+        </MemoryRouter>
+      );
+      selectServiceAndDepth('A', 1);
+
+      expect(lastDAGProps.data.nodes).toHaveLength(2);
+      expect(lastDAGProps.data.nodes).toEqual(expect.arrayContaining([{ key: 'A' }, { key: 'B' }]));
+      expect(lastDAGProps.data.edges).toHaveLength(1);
     });
   });
 });

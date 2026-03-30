@@ -1,50 +1,48 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
-/* eslint-disable import/first */
-jest.mock('node-fetch', () => () =>
-  Promise.resolve({
-    status: 200,
-    data: () => Promise.resolve({ data: null }),
-    json: () => Promise.resolve({ data: null }),
-  })
+jest.mock(
+  'node-fetch',
+  () => () =>
+    Promise.resolve({
+      status: 200,
+      data: () => Promise.resolve({ data: null }),
+      json: () => Promise.resolve({ data: null }),
+    })
 );
 
-import sinon from 'sinon';
-import isPromise from 'is-promise';
+function isPromise(p) {
+  return p !== null && typeof p === 'object' && typeof p.then === 'function' && typeof p.catch === 'function';
+}
 
 import * as jaegerApiActions from './jaeger-api';
 import JaegerAPI from '../api/jaeger';
+
+// Mock the JaegerAPI module
+jest.mock('../api/jaeger', () => ({
+  fetchTrace: jest.fn(() => Promise.resolve()),
+  searchTraces: jest.fn(() => Promise.resolve()),
+  archiveTrace: jest.fn(() => Promise.resolve()),
+  fetchServices: jest.fn(() => Promise.resolve()),
+  fetchServiceOperations: jest.fn(() => Promise.resolve()),
+  fetchServiceServerOps: jest.fn(() => Promise.resolve()),
+  fetchDeepDependencyGraph: jest.fn(() => Promise.resolve()),
+  fetchDependencies: jest.fn(() => Promise.resolve()),
+  fetchMetrics: jest.fn(() => Promise.resolve()),
+}));
 
 describe('actions/jaeger-api', () => {
   const query = { param: 'value' };
   const id = 'my-trace-id';
   const ids = [id, id];
-  let mock;
 
   beforeEach(() => {
-    mock = sinon.mock(JaegerAPI);
-  });
-
-  afterEach(() => {
-    mock.restore();
+    jest.clearAllMocks();
   });
 
   it('@JAEGER_API/FETCH_TRACE should fetch the trace by id', () => {
-    mock.expects('fetchTrace').withExactArgs(id);
     jaegerApiActions.fetchTrace(id);
-    expect(() => mock.verify()).not.toThrow();
+    expect(JaegerAPI.fetchTrace).toHaveBeenCalledWith(id);
   });
 
   it('@JAEGER_API/FETCH_TRACE should return the promise', () => {
@@ -58,9 +56,8 @@ describe('actions/jaeger-api', () => {
   });
 
   it('@JAEGER_API/FETCH_MULTIPLE_TRACES should fetch traces by ids', () => {
-    mock.expects('searchTraces').withExactArgs(sinon.match.has('traceID', ids));
     jaegerApiActions.fetchMultipleTraces(ids);
-    expect(() => mock.verify()).not.toThrow();
+    expect(JaegerAPI.searchTraces).toHaveBeenCalledWith(expect.objectContaining({ traceID: ids }));
   });
 
   it('@JAEGER_API/FETCH_MULTIPLE_TRACES should return the promise', () => {
@@ -74,9 +71,8 @@ describe('actions/jaeger-api', () => {
   });
 
   it('@JAEGER_API/ARCHIVE_TRACE should archive the trace by id', () => {
-    mock.expects('archiveTrace').withExactArgs(id);
     jaegerApiActions.archiveTrace(id);
-    expect(() => mock.verify()).not.toThrow();
+    expect(JaegerAPI.archiveTrace).toHaveBeenCalledWith(id);
   });
 
   it('@JAEGER_API/ARCHIVE_TRACE should return the promise', () => {
@@ -90,9 +86,8 @@ describe('actions/jaeger-api', () => {
   });
 
   it('@JAEGER_API/SEARCH_TRACES should fetch the trace by id', () => {
-    mock.expects('searchTraces').withExactArgs(query);
     jaegerApiActions.searchTraces(query);
-    expect(() => mock.verify()).not.toThrow();
+    expect(JaegerAPI.searchTraces).toHaveBeenCalledWith(query);
   });
 
   it('@JAEGER_API/SEARCH_TRACES should return the promise', () => {
@@ -105,33 +100,9 @@ describe('actions/jaeger-api', () => {
     expect(meta.query).toEqual(query);
   });
 
-  it('@JAEGER_API/FETCH_SERVICES should return a promise', () => {
-    const { payload } = jaegerApiActions.fetchServices();
-    expect(isPromise(payload)).toBeTruthy();
-  });
-
-  it('@JAEGER_API/FETCH_SERVICE_OPERATIONS should call the JaegerAPI', () => {
-    const called = mock
-      .expects('fetchServiceOperations')
-      .once()
-      .withExactArgs('service');
-    jaegerApiActions.fetchServiceOperations('service');
-    expect(called.verify()).toBeTruthy();
-  });
-
-  it('@JAEGER_API/FETCH_SERVICE_SERVER_OP should call the JaegerAPI', () => {
-    const called = mock
-      .expects('fetchServiceServerOps')
-      .once()
-      .withExactArgs('service');
-    jaegerApiActions.fetchServiceServerOps('service');
-    expect(called.verify()).toBeTruthy();
-  });
-
   it('@JAEGER_API/FETCH_DEEP_DEPENDENCY_GRAPH should fetch the graph by params', () => {
-    mock.expects('fetchDeepDependencyGraph').withExactArgs(query);
     jaegerApiActions.fetchDeepDependencyGraph(query);
-    expect(() => mock.verify()).not.toThrow();
+    expect(JaegerAPI.fetchDeepDependencyGraph).toHaveBeenCalledWith(query);
   });
 
   it('@JAEGER_API/FETCH_DEEP_DEPENDENCY_GRAPH should return the promise', () => {
@@ -145,8 +116,27 @@ describe('actions/jaeger-api', () => {
   });
 
   it('@JAEGER_API/FETCH_DEPENDENCIES should call the JaegerAPI', () => {
-    const called = mock.expects('fetchDependencies').once();
     jaegerApiActions.fetchDependencies();
-    expect(called.verify()).toBeTruthy();
+    expect(JaegerAPI.fetchDependencies).toHaveBeenCalledTimes(1);
+  });
+
+  it('@JAEGER_API/FETCH_ALL_SERVICE_METRICS should return the promise', () => {
+    const { payload } = jaegerApiActions.fetchAllServiceMetrics('serviceName', query);
+    expect(isPromise(payload)).toBeTruthy();
+  });
+
+  it('@JAEGER_API/FETCH_ALL_SERVICE_METRICS should fetch service metrics by name', () => {
+    jaegerApiActions.fetchAllServiceMetrics('serviceName', query);
+    expect(JaegerAPI.fetchMetrics).toHaveBeenCalledTimes(5);
+  });
+
+  it('@JAEGER_API/FETCH_AGGREGATED_SERVICE_METRICS should return the promise', () => {
+    const { payload } = jaegerApiActions.fetchAggregatedServiceMetrics('serviceName', query);
+    expect(isPromise(payload)).toBeTruthy();
+  });
+
+  it('@JAEGER_API/FETCH_AGGREGATED_SERVICE_METRICS should fetch service metrics by name', () => {
+    jaegerApiActions.fetchAggregatedServiceMetrics('serviceName', query);
+    expect(JaegerAPI.fetchMetrics).toHaveBeenCalledTimes(3);
   });
 });

@@ -1,18 +1,8 @@
 // Copyright (c) 2018-2020 The Jaeger Authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import * as React from 'react';
+import { memo } from 'react';
 import { Popover } from 'antd';
 import cx from 'classnames';
 import { TLayoutVertex } from '@jaegertracing/plexus/lib/types';
@@ -34,57 +24,62 @@ type Props = {
 const abs = Math.abs;
 const max = Math.max;
 
-export class DiffNode extends React.PureComponent<Props> {
-  render() {
-    const { a, b, operation, service } = this.props;
-    const isSame = a === b;
-    const className = cx({
-      'is-same': isSame,
-      'is-changed': !isSame,
-      'is-more': b > a && a > 0,
-      'is-added': a === 0,
-      'is-less': a > b && b > 0,
-      'is-removed': b === 0,
-    });
-    const chgSign = a < b ? '+' : '-';
-    const table = (
-      <table className={`DiffNode ${className}`}>
-        <tbody className="DiffNode--body">
-          <tr>
-            <td className={`DiffNode--metricCell ${className}`} rowSpan={isSame ? 2 : 1}>
-              {isSame ? null : <span className="DiffNode--metricSymbol">{chgSign}</span>}
-              {isSame ? a : abs(b - a)}
+function DiffNodeComponent(props: Props) {
+  const { a, b, operation, service } = props;
+  const isSame = a === b;
+  const className = cx({
+    'is-same': isSame,
+    'is-changed': !isSame,
+    'is-more': b > a && a > 0,
+    'is-added': a === 0,
+    'is-less': a > b && b > 0,
+    'is-removed': b === 0,
+  });
+  const chgSign = a < b ? '+' : '-';
+  const table = (
+    <table className={`DiffNode ${className}`}>
+      <tbody className="DiffNode--body">
+        <tr>
+          <td
+            className={`DiffNode--metricCell ${className}`}
+            rowSpan={isSame ? 2 : 1}
+            data-testid="diff-metric-cell"
+          >
+            {isSame ? null : <span className="DiffNode--metricSymbol">{chgSign}</span>}
+            {isSame ? a : abs(b - a)}
+          </td>
+          <td className={`DiffNode--labelCell ${className}`}>
+            <strong>{service}</strong>
+            <CopyIcon
+              className="DiffNode--copyIcon"
+              copyText={`${service} ${operation}`}
+              tooltipTitle="Copy label"
+              buttonText="Copy"
+            />
+          </td>
+        </tr>
+        <tr>
+          {isSame ? null : (
+            <td className={`DiffNode--metricCell ${className}`} data-testid="diff-percent-cell">
+              <span className="DiffNode--metricSymbol">{chgSign}</span>
+              {a === 0 || b === 0 ? 100 : abs(((a - b) / max(a, b)) * 100).toFixed(0)}
+              <span className="DiffNode--metricSymbol">%</span>
             </td>
-            <td className={`DiffNode--labelCell ${className}`}>
-              <strong>{service}</strong>
-              <CopyIcon
-                className="DiffNode--copyIcon"
-                copyText={`${service} ${operation}`}
-                tooltipTitle="Copy label"
-              />
-            </td>
-          </tr>
-          <tr>
-            {isSame ? null : (
-              <td className={`DiffNode--metricCell ${className}`}>
-                <span className="DiffNode--metricSymbol">{chgSign}</span>
-                {a === 0 || b === 0 ? 100 : abs(((a - b) / max(a, b)) * 100).toFixed(0)}
-                <span className="DiffNode--metricSymbol">%</span>
-              </td>
-            )}
-            <td className={`DiffNode--labelCell ${className}`}>{operation}</td>
-          </tr>
-        </tbody>
-      </table>
-    );
+          )}
+          <td className={`DiffNode--labelCell ${className}`}>{operation}</td>
+        </tr>
+      </tbody>
+    </table>
+  );
 
-    return (
-      <Popover overlayClassName={`DiffNode--popover ${className}`} mouseEnterDelay={0.25} content={table}>
-        {table}
-      </Popover>
-    );
-  }
+  return (
+    <Popover classNames={{ root: `DiffNode--popover ${className}` }} mouseEnterDelay={0.25} content={table}>
+      {table}
+    </Popover>
+  );
 }
+
+export const DiffNode = memo(DiffNodeComponent);
 
 export default function renderNode(vertex: TDagPlexusVertex<TDiffCounts>) {
   const { a, b, operation, service } = vertex.data;
@@ -94,7 +89,7 @@ export default function renderNode(vertex: TDagPlexusVertex<TDiffCounts>) {
 }
 
 export function getNodeEmphasisRenderer(keys: Set<string>) {
-  return function drawEmphasizedNode(lv: TLayoutVertex<any>) {
+  return function drawEmphasizedNode(lv: TLayoutVertex) {
     if (!keys.has(lv.vertex.key)) {
       return null;
     }

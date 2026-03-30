@@ -1,96 +1,61 @@
 // Copyright (c) 2018 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
-import spanAncestorIdsSpy from './span-ancestor-ids';
+import spanAncestorIds from './span-ancestor-ids';
 
-describe('spanAncestorIdsSpy', () => {
-  const ownSpanID = 'ownSpanID';
-  const firstParentSpanID = 'firstParentSpanID';
-  const firstParentFirstGrandparentSpanID = 'firstParentFirstGrandparentSpanID';
-  const firstParentSecondGrandparentSpanID = 'firstParentSecondGrandparentSpanID';
-  const secondParentSpanID = 'secondParentSpanID';
-  const rootSpanID = 'rootSpanID';
-  const span = {
-    references: [
-      {
-        span: {
-          spanID: firstParentSpanID,
-          references: [
-            {
-              span: {
-                spanID: firstParentFirstGrandparentSpanID,
-                references: [
-                  {
-                    span: {
-                      spanID: rootSpanID,
-                    },
-                  },
-                ],
-              },
-              refType: 'not an ancestor ref type',
-            },
-            {
-              span: {
-                spanID: firstParentSecondGrandparentSpanID,
-                references: [
-                  {
-                    span: {
-                      spanID: rootSpanID,
-                    },
-                    refType: 'FOLLOWS_FROM',
-                  },
-                ],
-              },
-              refType: 'CHILD_OF',
-            },
-          ],
-        },
-        refType: 'CHILD_OF',
-      },
-      {
-        span: {
-          spanID: secondParentSpanID,
-        },
-        refType: 'CHILD_OF',
-      },
-    ],
-    spanID: ownSpanID,
+describe('spanAncestorIds', () => {
+  const rootSpanId = 'root-span-id';
+  const grandparentSpanId = 'grandparent-span-id';
+  const parentSpanId = 'parent-span-id';
+  const childSpanId = 'child-span-id';
+
+  const rootSpan = {
+    spanID: rootSpanId,
+    parentSpanId: undefined,
+    parentSpan: undefined,
   };
-  const expectedAncestorIds = [firstParentSpanID, firstParentSecondGrandparentSpanID, rootSpanID];
+
+  const grandparentSpan = {
+    spanID: grandparentSpanId,
+    parentSpanId: rootSpanId,
+    parentSpan: rootSpan,
+  };
+
+  const parentSpan = {
+    spanID: parentSpanId,
+    parentSpanId: grandparentSpanId,
+    parentSpan: grandparentSpan,
+  };
+
+  const childSpan = {
+    spanID: childSpanId,
+    parentSpanId: parentSpanId,
+    parentSpan: parentSpan,
+  };
 
   it('returns an empty array if given falsy span', () => {
-    expect(spanAncestorIdsSpy(null)).toEqual([]);
+    expect(spanAncestorIds(null)).toEqual([]);
   });
 
-  it('returns an empty array if span has no references', () => {
-    const spanWithoutReferences = {
-      spanID: 'parentlessSpanID',
-      references: [],
+  it('returns an empty array if span has no parentSpan', () => {
+    expect(spanAncestorIds(rootSpan)).toEqual([]);
+  });
+
+  it('returns all ancestor span IDs from parent to root', () => {
+    expect(spanAncestorIds(childSpan)).toEqual([parentSpanId, grandparentSpanId, rootSpanId]);
+  });
+
+  it('stops traversal when parent span is not available', () => {
+    const isolatedChild = {
+      spanID: childSpanId,
+      parentSpanId: parentSpanId,
+      parentSpan: undefined, // No parent span available
     };
 
-    expect(spanAncestorIdsSpy(spanWithoutReferences)).toEqual([]);
+    expect(spanAncestorIds(isolatedChild)).toEqual([]);
   });
 
-  it('returns all unique spanIDs from first valid CHILD_OF or FOLLOWS_FROM reference up to the root span', () => {
-    expect(spanAncestorIdsSpy(span)).toEqual(expectedAncestorIds);
-  });
-
-  it('ignores references without a span', () => {
-    const spanWithSomeEmptyReferences = {
-      ...span,
-      references: [{ refType: 'CHILD_OF' }, { refType: 'FOLLOWS_FROM', span: {} }, ...span.references],
-    };
-    expect(spanAncestorIdsSpy(spanWithSomeEmptyReferences)).toEqual(expectedAncestorIds);
+  it('handles single-level parent relationship', () => {
+    expect(spanAncestorIds(grandparentSpan)).toEqual([rootSpanId]);
   });
 });

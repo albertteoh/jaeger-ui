@@ -1,31 +1,57 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
-/* eslint-disable import/first */
-jest.mock('store');
+jest.mock('../common/SearchableSelect', () => {
+  const MockSearchableSelect = ({ onChange, 'data-testid': testId, disabled, value, ...props }) => {
+    if (onChange && testId) {
+      MockSearchableSelect.onChangeFns[testId] = onChange;
+    }
+    if (testId) {
+      MockSearchableSelect.disabled[testId] = disabled;
+    }
+    return <div data-testid={`mock-select-${testId}`} data-disabled={disabled} data-value={value} />;
+  };
+  MockSearchableSelect.onChangeFns = {};
+  MockSearchableSelect.disabled = {};
+  return MockSearchableSelect;
+});
+jest.mock('../../hooks/useConfig', () => ({
+  useConfig: () => ({
+    useOpenTelemetryTerms: false,
+  }),
+}));
+jest.mock('../../hooks/useTraceDiscovery', () => ({
+  useServices: jest.fn(() => ({
+    data: ['svcA', 'svcB'],
+    isLoading: false,
+    error: null,
+  })),
+  useSpanNames: jest.fn(() => ({
+    data: [
+      { name: 'A', spanKind: 'server' },
+      { name: 'B', spanKind: 'client' },
+    ],
+    isLoading: false,
+  })),
+}));
 
 import React from 'react';
-import { shallow } from 'enzyme';
-import moment from 'moment';
+import { MemoryRouter } from 'react-router-dom';
+import { render, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { act } from 'react';
+import '@testing-library/jest-dom';
+import dayjs from 'dayjs';
 import queryString from 'query-string';
-import store from 'store';
+import * as jaegerApiActions from '../../actions/jaeger-api';
+import SearchableSelect from '../common/SearchableSelect';
 
 import {
+  applyAdjustTime,
   convertQueryParamsToFormDates,
   convTagsLogfmt,
   getUnixTimeStampInMSFromForm,
   lookbackToTimestamp,
+  mapDispatchToProps,
   mapStateToProps,
   optionsWithinMaxLookback,
   submitForm,
@@ -34,7 +60,7 @@ import {
   validateDurationFields,
 } from './SearchForm';
 import * as markers from './SearchForm.markers';
-import getConfig from '../../utils/config/get-config';
+import { CHANGE_SERVICE_ACTION_TYPE } from '../../constants/search-form';
 
 function makeDateParams(dateOffset = 0) {
   const date = new Date();
@@ -53,8 +79,6 @@ function makeDateParams(dateOffset = 0) {
   };
 }
 
-const DATE_FORMAT = 'YYYY-MM-DD';
-const TIME_FORMAT = 'HH:mm';
 const defaultProps = {
   dataCenters: ['dc1'],
   handleSubmit: () => {},
@@ -62,7 +86,7 @@ const defaultProps = {
     label: '2 Days',
     value: '2d',
   },
-  services: [{ name: 'svcA', operations: ['A', 'B'] }, { name: 'svcB', operations: ['A', 'B'] }],
+  submitFormHandler: jest.fn().mockReturnValue('/search'),
 };
 
 describe('conversion utils', () => {
@@ -83,23 +107,16 @@ describe('conversion utils', () => {
 
   describe('convertQueryParamsToFormDates()', () => {
     it('converts correctly', () => {
-      const startMoment = moment().subtract(1, 'day');
-      const endMoment = moment();
-      const params = {
-        start: `${startMoment.valueOf()}000`,
-        end: `${endMoment.valueOf()}000`,
-      };
+      const { queryStartDate, queryStartDateTime, queryEndDate, queryEndDateTime } =
+        convertQueryParamsToFormDates({
+          start: '946720800000000', // Jan 1, 2000 10:00 AM
+          end: '946807200000000', // Jan 2, 2000 10:00 AM
+        });
 
-      const {
-        queryStartDate,
-        queryStartDateTime,
-        queryEndDate,
-        queryEndDateTime,
-      } = convertQueryParamsToFormDates(params);
-      expect(queryStartDate).toBe(startMoment.format(DATE_FORMAT));
-      expect(queryStartDateTime).toBe(startMoment.format(TIME_FORMAT));
-      expect(queryEndDate).toBe(endMoment.format(DATE_FORMAT));
-      expect(queryEndDateTime).toBe(endMoment.format(TIME_FORMAT));
+      expect(queryStartDate).toBe('2000-01-01');
+      expect(queryStartDateTime).toBe('10:00');
+      expect(queryEndDate).toBe('2000-01-02');
+      expect(queryEndDateTime).toBe('10:00');
     });
   });
 
@@ -130,6 +147,12 @@ describe('conversion utils', () => {
     it('splits on ","', () => {
       const strs = ['a', 'b', 'c'];
       expect(traceIDsToQuery(strs.join(','))).toEqual(strs);
+    });
+
+    it('returns null if traceIDs is falsy', () => {
+      expect(traceIDsToQuery(null)).toBe(null);
+      expect(traceIDsToQuery(undefined)).toBe(null);
+      expect(traceIDsToQuery('')).toBe(null);
     });
   });
 });
@@ -172,8 +195,54 @@ describe('lookback utils', () => {
     });
   });
 
+  describe('applyAdjustTime', () => {
+    const minuteInMicroseconds = 60 * 1000 * 1000;
+    const now = new Date();
+    const nowInMicroseconds = now.valueOf() * 1000;
+
+    it('returns original timestamp when adjustTime is undefined', () => {
+      expect(applyAdjustTime(nowInMicroseconds, undefined)).toBe(nowInMicroseconds);
+    });
+
+    it('returns original timestamp when adjustTime is null', () => {
+      expect(applyAdjustTime(nowInMicroseconds, null)).toBe(nowInMicroseconds);
+    });
+
+    it('returns original timestamp when adjustTime is empty string', () => {
+      expect(applyAdjustTime(nowInMicroseconds, '')).toBe(nowInMicroseconds);
+    });
+
+    it('subtracts 1 minute from timestamp for adjustTime="1m"', () => {
+      const adjusted = applyAdjustTime(nowInMicroseconds, '1m');
+      expect(nowInMicroseconds - adjusted).toBe(minuteInMicroseconds);
+    });
+
+    it('subtracts 5 minutes from timestamp for adjustTime="5m"', () => {
+      const adjusted = applyAdjustTime(nowInMicroseconds, '5m');
+      expect(nowInMicroseconds - adjusted).toBe(5 * minuteInMicroseconds);
+    });
+
+    it('subtracts 30 seconds from timestamp for adjustTime="30s"', () => {
+      const secondInMicroseconds = 1000 * 1000;
+      const adjusted = applyAdjustTime(nowInMicroseconds, '30s');
+      expect(nowInMicroseconds - adjusted).toBe(30 * secondInMicroseconds);
+    });
+  });
+
   describe('optionsWithinMaxLookback', () => {
     const threeHoursOfExpectedOptions = [
+      {
+        label: '5 Minutes',
+        value: '5m',
+      },
+      {
+        label: '15 Minutes',
+        value: '15m',
+      },
+      {
+        label: '30 Minutes',
+        value: '30m',
+      },
       {
         label: 'Hour',
         value: '1h',
@@ -197,13 +266,13 @@ describe('lookback utils', () => {
     });
 
     it('returns options within config.search.maxLookback', () => {
-      const configValue = threeHoursOfExpectedOptions[2];
+      const configValue = threeHoursOfExpectedOptions[threeHoursOfExpectedOptions.length - 1];
       const options = optionsWithinMaxLookback(configValue);
 
       expect(options.length).toBe(threeHoursOfExpectedOptions.length);
-      options.forEach(({ props }, i) => {
-        expect(props.value).toBe(threeHoursOfExpectedOptions[i].value);
-        expect(props.children[1]).toBe(threeHoursOfExpectedOptions[i].label);
+      options.forEach((option, i) => {
+        expect(option.props.value).toBe(threeHoursOfExpectedOptions[i].value);
+        expect(option.props.children).toBe(`Last ${threeHoursOfExpectedOptions[i].label}`);
       });
     });
 
@@ -216,9 +285,9 @@ describe('lookback utils', () => {
       const options = optionsWithinMaxLookback(configValue);
 
       expect(options.length).toBe(expectedOptions.length);
-      options.forEach(({ props }, i) => {
-        expect(props.value).toBe(expectedOptions[i].value);
-        expect(props.children[1]).toBe(expectedOptions[i].label);
+      options.forEach((option, i) => {
+        expect(option.props.value).toBe(expectedOptions[i].value);
+        expect(option.props.children).toBe(`Last ${expectedOptions[i].label}`);
       });
     });
 
@@ -227,13 +296,14 @@ describe('lookback utils', () => {
         label: '180 minutes is equivalent to 3 hours',
         value: '180m',
       };
-      const expectedOptions = [threeHoursOfExpectedOptions[0], threeHoursOfExpectedOptions[1], configValue];
+
+      const expectedOptions = [...threeHoursOfExpectedOptions.slice(0, -1), configValue];
       const options = optionsWithinMaxLookback(configValue);
 
       expect(options.length).toBe(expectedOptions.length);
-      options.forEach(({ props }, i) => {
-        expect(props.value).toBe(expectedOptions[i].value);
-        expect(props.children[1]).toBe(expectedOptions[i].label);
+      options.forEach((option, i) => {
+        expect(option.props.value).toBe(expectedOptions[i].value);
+        expect(option.props.children).toBe(`Last ${expectedOptions[i].label}`);
       });
     });
   });
@@ -264,11 +334,28 @@ describe('submitForm()', () => {
     expect(operation).toBe(undefined);
   });
 
+  it('expects operation to be value defined in beforeEach', () => {
+    submitForm(fields, searchTraces);
+    const { calls } = searchTraces.mock;
+    expect(calls.length).toBe(1);
+    const { operation } = calls[0][0];
+    expect(operation).toBe('op-a');
+  });
+
+  it('expects operation to be value assigned before call is made', () => {
+    fields.operation = 'test';
+    submitForm(fields, searchTraces);
+    const { calls } = searchTraces.mock;
+    expect(calls.length).toBe(1);
+    const { operation } = calls[0][0];
+    expect(operation).toBe('test');
+  });
+
   describe('`fields.lookback`', () => {
     function getCalledDuration(mock) {
       const { start, end } = mock.calls[0][0];
       const diffMs = (Number(end) - Number(start)) / 1000;
-      return moment.duration(diffMs);
+      return dayjs.duration(diffMs);
     }
 
     it('subtracts `lookback` from `fields.end`', () => {
@@ -356,63 +443,323 @@ describe('submitForm()', () => {
   });
 });
 
+function renderForm(ui) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>);
+}
+
 describe('<SearchForm>', () => {
-  let wrapper;
+  afterEach(cleanup);
   beforeEach(() => {
-    wrapper = shallow(<SearchForm {...defaultProps} />);
+    jest.clearAllMocks();
+    SearchableSelect.onChangeFns = {};
+    SearchableSelect.disabled = {};
   });
 
-  it('enables operations only when a service is selected', () => {
-    let ops = wrapper.find('[placeholder="Select An Operation"]');
-    expect(ops.prop('props').disabled).toBe(true);
-    wrapper = shallow(<SearchForm {...defaultProps} selectedService="svcA" />);
-    ops = wrapper.find('[placeholder="Select An Operation"]');
-    expect(ops.prop('props').disabled).toBe(false);
+  it('enables operations only when a service is selected', async () => {
+    renderForm(<SearchForm key="fresh" {...defaultProps} />);
+
+    expect(SearchableSelect.disabled.operation).toBe(true);
+    cleanup();
+
+    renderForm(<SearchForm key="with-svc" {...defaultProps} initialValues={{ service: 'svcA' }} />);
+
+    await waitFor(() => expect(SearchableSelect.disabled.operation).toBe(false));
   });
 
-  it('shows custom date inputs when `props.selectedLookback` is "custom"', () => {
-    function getDateFieldLengths(compWrapper) {
-      return [
-        compWrapper.find('[placeholder="Start Date"]').length,
-        compWrapper.find('[placeholder="End Date"]').length,
-      ];
-    }
-    expect(getDateFieldLengths(wrapper)).toEqual([0, 0]);
-    wrapper = shallow(<SearchForm {...defaultProps} selectedLookback="custom" />);
-    expect(getDateFieldLengths(wrapper)).toEqual([1, 1]);
+  it('keeps operation disabled when no service selected', () => {
+    renderForm(<SearchForm {...defaultProps} />);
+
+    expect(SearchableSelect.disabled.operation).toBe(true);
+  });
+
+  it('shows custom date inputs when lookback is set to "custom"', () => {
+    const props = {
+      ...defaultProps,
+      initialValues: {
+        lookback: 'custom',
+        startDate: '2020-01-01',
+        startDateTime: '00:00',
+        endDate: '2020-01-02',
+        endDateTime: '00:00',
+      },
+    };
+
+    const { container } = renderForm(<SearchForm key="custom-date" {...props} />);
+
+    const startDateInput = container.querySelector('input[name="startDate"]');
+    const endDateInput = container.querySelector('input[name="endDate"]');
+
+    expect(startDateInput).toBeInTheDocument();
+    expect(endDateInput).toBeInTheDocument();
   });
 
   it('disables the submit button when a service is not selected', () => {
-    let btn = wrapper.find(`[data-test="${markers.SUBMIT_BTN}"]`);
-    expect(btn.prop('disabled')).toBeTruthy();
-    wrapper = shallow(<SearchForm {...defaultProps} selectedService="svcA" />);
-    btn = wrapper.find(`[data-test="${markers.SUBMIT_BTN}"]`);
-    expect(btn.prop('disabled')).toBeFalsy();
+    const { container } = renderForm(
+      <SearchForm key="disabled-no-svc" {...defaultProps} initialValues={{ service: '-' }} />
+    );
+
+    const submitButton = container.querySelector(`[data-test="${markers.SUBMIT_BTN}"]`);
+    expect(submitButton).toBeDisabled();
   });
 
   it('disables the submit button when the form has invalid data', () => {
-    wrapper = shallow(<SearchForm {...defaultProps} selectedService="svcA" />);
-    let btn = wrapper.find(`[data-test="${markers.SUBMIT_BTN}"]`);
-    // If this test fails on the following expect statement, this may be a false negative caused by a separate
-    // regression.
-    expect(btn.prop('disabled')).toBeFalsy();
-    wrapper.setProps({ invalid: true });
-    btn = wrapper.find(`[data-test="${markers.SUBMIT_BTN}"]`);
-    expect(btn.prop('disabled')).toBeTruthy();
+    const { container } = renderForm(
+      <SearchForm
+        key="disabled-invalid"
+        {...defaultProps}
+        invalid={true}
+        initialValues={{ service: 'svcA' }}
+      />
+    );
+
+    const submitButton = container.querySelector(`[data-test="${markers.SUBMIT_BTN}"]`);
+    expect(submitButton).toBeDisabled();
+  });
+
+  it('disables the submit button when duration is invalid', () => {
+    const { container } = renderForm(
+      <SearchForm key="duration-val" {...defaultProps} initialValues={{ service: 'svcA' }} />
+    );
+
+    const submitButton = container.querySelector(`[data-test="${markers.SUBMIT_BTN}"]`);
+    expect(submitButton).not.toBeDisabled();
+
+    const minDurationInput = container.querySelector('input[name="minDuration"]');
+    fireEvent.change(minDurationInput, { target: { value: '1kg' } });
+
+    expect(submitButton).toBeDisabled();
   });
 
   it('uses config.search.maxLimit', () => {
     const maxLimit = 6789;
-    getConfig.apply({}, []);
     const config = {
       search: {
         maxLimit,
       },
     };
+
+    const originalGetConfig = window.getJaegerUiConfig;
     window.getJaegerUiConfig = jest.fn(() => config);
-    wrapper = shallow(<SearchForm {...defaultProps} selectedService="svcA" />);
-    const field = wrapper.find(`Field[name="resultsLimit"]`);
-    expect(field.prop('props').max).toEqual(maxLimit);
+
+    const { container } = renderForm(<SearchForm {...defaultProps} />);
+
+    const limitInput = container.querySelector('input[name="resultsLimit"]');
+    expect(limitInput).toHaveAttribute('max');
+
+    window.getJaegerUiConfig = originalGetConfig;
+  });
+
+  it('updates state when tags input changes', () => {
+    const { container } = renderForm(<SearchForm {...defaultProps} />);
+
+    const tagsInput = container.querySelector('input[name="tags"]');
+    fireEvent.change(tagsInput, { target: { value: 'new=tag' } });
+
+    expect(tagsInput.value).toBe('new=tag');
+  });
+
+  it('prevents default form submission behavior', async () => {
+    const { container } = renderForm(
+      <SearchForm {...defaultProps} searchAdjustEndTime="1m" initialValues={{ service: 'svcA' }} />
+    );
+    const form = container.querySelector('form');
+
+    await waitFor(() =>
+      expect(container.querySelector(`[data-test="${markers.SUBMIT_BTN}"]`)).not.toBeDisabled()
+    );
+
+    fireEvent.submit(form);
+
+    await waitFor(() => expect(defaultProps.submitFormHandler).toHaveBeenCalled());
+
+    expect(defaultProps.submitFormHandler).toHaveBeenCalledWith(
+      expect.objectContaining({ service: 'svcA' }),
+      '1m',
+      expect.any(Boolean)
+    );
+  });
+
+  describe('error handling', () => {
+    const { useServices, useSpanNames } = require('../../hooks/useTraceDiscovery');
+
+    afterEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('displays error message when services fetch fails', () => {
+      useServices.mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        error: new Error('Failed to fetch services'),
+      });
+
+      const { container } = renderForm(<SearchForm {...defaultProps} />);
+
+      // Should still render the form
+      expect(container.querySelector('form')).toBeInTheDocument();
+
+      // Should display error message for services
+      expect(container.textContent).toContain('Error loading services: Failed to fetch services');
+    });
+
+    it('displays error message when span names fetch fails', async () => {
+      useServices.mockReturnValue({
+        data: ['svcA', 'svcB'],
+        isLoading: false,
+        error: null,
+      });
+
+      useSpanNames.mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        error: new Error('Failed to fetch span names'),
+      });
+
+      const { container } = renderForm(<SearchForm {...defaultProps} initialValues={{ service: 'svcA' }} />);
+
+      // Should still render the form
+      expect(container.querySelector('form')).toBeInTheDocument();
+
+      // Should display error message for operations
+      await waitFor(() => {
+        expect(container.textContent).toContain('Error loading operations: Failed to fetch span names');
+      });
+    });
+
+    it('form remains functional when services error occurs', () => {
+      useServices.mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        error: new Error('Service error'),
+      });
+
+      const { container } = renderForm(<SearchForm {...defaultProps} />);
+
+      // Form should still be present
+      const form = container.querySelector('form');
+      expect(form).toBeInTheDocument();
+
+      // Submit button should be disabled (no service selected due to error)
+      const submitButton = container.querySelector(`[data-test="${markers.SUBMIT_BTN}"]`);
+      expect(submitButton).toBeDisabled();
+    });
+
+    it('form remains functional when span names error occurs', async () => {
+      useServices.mockReturnValue({
+        data: ['svcA', 'svcB'],
+        isLoading: false,
+        error: null,
+      });
+
+      useSpanNames.mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        error: new Error('Span names error'),
+      });
+
+      const { container } = renderForm(<SearchForm {...defaultProps} initialValues={{ service: 'svcA' }} />);
+
+      // Form should still be present
+      const form = container.querySelector('form');
+      expect(form).toBeInTheDocument();
+
+      // Submit button should still work (can search without selecting specific operation)
+      await waitFor(() => {
+        const submitButton = container.querySelector(`[data-test="${markers.SUBMIT_BTN}"]`);
+        expect(submitButton).not.toBeDisabled();
+      });
+    });
+  });
+});
+
+describe('SearchForm onChange handlers', () => {
+  afterEach(cleanup);
+  beforeEach(() => {
+    jest.clearAllMocks();
+    SearchableSelect.onChangeFns = {};
+    SearchableSelect.disabled = {};
+  });
+
+  it('updates form data when onChange handlers are triggered', async () => {
+    const props = {
+      ...defaultProps,
+      initialValues: {
+        lookback: 'custom',
+        startDate: '2025-08-06',
+        startDateTime: '18:19',
+        endDate: '2025-08-06',
+        endDateTime: '18:19',
+        service: 'svcA',
+      },
+    };
+
+    const { getByTestId, container } = renderForm(<SearchForm key="on-change" {...props} />);
+
+    // Service
+    await act(async () => {
+      SearchableSelect.onChangeFns.service('testService');
+    });
+    await waitFor(() =>
+      expect(getByTestId('mock-select-service').getAttribute('data-value')).toBe('testService')
+    );
+
+    // Operation
+    await act(async () => {
+      SearchableSelect.onChangeFns.operation('testOperation');
+    });
+    await waitFor(() =>
+      expect(getByTestId('mock-select-operation').getAttribute('data-value')).toBe('testOperation')
+    );
+
+    // Date/Time inputs (should be visible initially because lookback is 'custom')
+    await waitFor(() => expect(container.querySelector('input[name="startDate"]')).not.toBeNull());
+    const startDateInput = container.querySelector('input[name="startDate"]');
+    await act(async () => {
+      fireEvent.change(startDateInput, { target: { value: '2025-08-07' } });
+    });
+    await waitFor(() => expect(startDateInput.value).toBe('2025-08-07'));
+
+    const startDateTimeInput = container.querySelector('input[name="startDateTime"]');
+    await act(async () => {
+      fireEvent.change(startDateTimeInput, { target: { value: '10:00' } });
+    });
+    await waitFor(() => expect(startDateTimeInput.value).toBe('10:00'));
+
+    const endDateInput = container.querySelector('input[name="endDate"]');
+    await act(async () => {
+      fireEvent.change(endDateInput, { target: { value: '2025-08-08' } });
+    });
+    await waitFor(() => expect(endDateInput.value).toBe('2025-08-08'));
+
+    const endDateTimeInput = container.querySelector('input[name="endDateTime"]');
+    await act(async () => {
+      fireEvent.change(endDateTimeInput, { target: { value: '11:00' } });
+    });
+    await waitFor(() => expect(endDateTimeInput.value).toBe('11:00'));
+
+    // Lookback (testing change from 'custom' to '2h')
+    await act(async () => {
+      SearchableSelect.onChangeFns.lookback('2h');
+    });
+    await waitFor(() => expect(getByTestId('mock-select-lookback').getAttribute('data-value')).toBe('2h'));
+
+    const resultsLimitInput = container.querySelector('input[name="resultsLimit"]');
+    await act(async () => {
+      fireEvent.change(resultsLimitInput, { target: { value: '100' } });
+    });
+    await waitFor(() => expect(resultsLimitInput.value).toBe('100'));
+
+    const tagsInput = container.querySelector('input[name="tags"]');
+    await act(async () => {
+      fireEvent.change(tagsInput, { target: { value: 'error=true' } });
+    });
+    await waitFor(() => expect(tagsInput.value).toBe('error=true'));
+
+    const maxDurationInput = container.querySelector('input[name="maxDuration"]');
+    await act(async () => {
+      fireEvent.change(maxDurationInput, { target: { value: '5s' } });
+    });
+    await waitFor(() => expect(maxDurationInput.value).toBe('5s'));
   });
 });
 
@@ -437,18 +784,19 @@ describe('validation', () => {
 
 describe('mapStateToProps()', () => {
   let state;
+  const callMapStateToProps = (search = '') => mapStateToProps(state, { search });
 
   beforeEach(() => {
-    state = { router: { location: { serach: '' } } };
+    state = {};
+    localStorage.clear();
   });
 
   it('does not explode when the query string is empty', () => {
-    expect(() => mapStateToProps(state)).not.toThrow();
+    expect(() => callMapStateToProps('')).not.toThrow();
   });
 
   // tests the green path
   it('service and operation fallback to values in `store` when the values are valid', () => {
-    const oldStoreGet = store.get;
     const op = 'some-op';
     const svc = 'some-svc';
     state.services = {
@@ -457,14 +805,13 @@ describe('mapStateToProps()', () => {
         [svc]: [op, 'some other opertion'],
       },
     };
-    store.get = () => ({ operation: op, service: svc });
-    const { service, operation } = mapStateToProps(state).initialValues;
+    localStorage.setItem('lastSearch', JSON.stringify({ operation: op, service: svc }));
+    const { service, operation } = callMapStateToProps().initialValues;
     expect(operation).toBe(op);
     expect(service).toBe(svc);
-    store.get = oldStoreGet;
   });
 
-  describe('deriving values from `state.router.location.search`', () => {
+  describe('deriving values from the URL search string (ownProps.search)', () => {
     let params;
     let expected;
 
@@ -475,8 +822,8 @@ describe('mapStateToProps()', () => {
       const tagsLogfmt = 'error=true span.kind=client';
       const common = {
         lookback: '2h',
-        maxDuration: null,
-        minDuration: null,
+        maxDuration: undefined,
+        minDuration: undefined,
         operation: 'Driver::findNearest',
         service: 'driver',
       };
@@ -500,38 +847,116 @@ describe('mapStateToProps()', () => {
     });
 
     it('derives values when available', () => {
-      state.router.location.search = queryString.stringify(params);
-      expect(mapStateToProps(state).initialValues).toEqual(expected);
+      expect(callMapStateToProps(queryString.stringify(params)).initialValues).toEqual(expected);
     });
 
     it('parses `tag` values in the former format to logfmt', () => {
       delete params.tags;
       params.tag = ['error:true', 'span.kind:client'];
-      state.router.location.search = queryString.stringify(params);
-      expect(mapStateToProps(state).initialValues).toEqual(expected);
+      expect(callMapStateToProps(queryString.stringify(params)).initialValues).toEqual(expected);
+    });
+
+    it('parses single string `tag` value in the former format to logfmt', () => {
+      delete params.tags;
+      params.tag = 'error:true';
+
+      const singleTagExpected = {
+        ...expected,
+        tags: 'error=true',
+      };
+
+      expect(callMapStateToProps(queryString.stringify(params)).initialValues).toEqual(singleTagExpected);
+    });
+
+    it('handles tag parsing for keys without values', () => {
+      delete params.tags;
+      params.tag = 'invalid-no-colon';
+
+      const tagWithEmptyValueExpected = {
+        ...expected,
+        tags: 'invalid-no-colon=""',
+      };
+
+      expect(callMapStateToProps(queryString.stringify(params)).initialValues).toEqual(
+        tagWithEmptyValueExpected
+      );
+    });
+
+    it('handles true parse errors', () => {
+      delete params.tags;
+
+      const parseErrorExpected = {
+        ...expected,
+        tags: undefined,
+      };
+
+      expect(callMapStateToProps(queryString.stringify(params)).initialValues).toEqual(parseErrorExpected);
+    });
+
+    it('handles empty key in tag parameter', () => {
+      delete params.tags;
+      params.tag = ':somevalue';
+
+      const parseErrorExpected = {
+        ...expected,
+        tags: 'Parse Error',
+      };
+
+      expect(callMapStateToProps(queryString.stringify(params)).initialValues).toEqual(parseErrorExpected);
+    });
+
+    it('handles invalid JSON in logfmtTags', () => {
+      delete params.tags;
+      params.tags = '{invalid-json}';
+
+      const errorExpected = {
+        ...expected,
+        tags: 'Parse Error',
+      };
+
+      expect(callMapStateToProps(queryString.stringify(params)).initialValues).toEqual(errorExpected);
+    });
+
+    it('handles traceIDParams as string', () => {
+      params.traceID = '123abc';
+
+      const traceIDExpected = {
+        ...expected,
+        traceIDs: '123abc',
+      };
+
+      expect(callMapStateToProps(queryString.stringify(params)).initialValues).toEqual(traceIDExpected);
+    });
+
+    it('handles traceIDParams as array', () => {
+      params.traceID = ['123abc', '456def'];
+
+      const traceIDExpected = {
+        ...expected,
+        traceIDs: '123abc,456def',
+      };
+
+      expect(callMapStateToProps(queryString.stringify(params)).initialValues).toEqual(traceIDExpected);
     });
   });
 
   it('fallsback to default values', () => {
-    // convert time string to number of minutes in day
     function msDiff(aDate, aTime, bDate, bTime) {
       const a = new Date(`${aDate}T${aTime}`);
       const b = new Date(`${bDate}T${bTime}`);
       return Math.abs(a - b);
     }
     const dateParams = makeDateParams(0);
-    const { startDate, startDateTime, endDate, endDateTime, ...values } = mapStateToProps(
-      state
-    ).initialValues;
+    const { startDate, startDateTime, endDate, endDateTime, ...values } = callMapStateToProps().initialValues;
 
     expect(values).toEqual({
       service: '-',
-      resultsLimit: 20,
+      resultsLimit: '20',
       lookback: '1h',
       operation: 'all',
       tags: undefined,
-      minDuration: null,
-      maxDuration: null,
+      minDuration: undefined,
+      maxDuration: undefined,
       traceIDs: null,
     });
     expect(startDate).toBe(dateParams.dateStr);
@@ -540,5 +965,52 @@ describe('mapStateToProps()', () => {
     // within 60 seconds (CI tests run slowly)
     expect(msDiff(dateParams.dateStr, '00:00', startDate, startDateTime)).toBeLessThan(60 * 1000);
     expect(msDiff(dateParams.dateStr, dateParams.dateTimeStr, endDate, endDateTime)).toBeLessThan(60 * 1000);
+  });
+});
+
+describe('submitForm() adjustEndTime toggle', () => {
+  it('should apply adjustEndTime when adjustTimeEnabled is true', () => {
+    const searchTraces = jest.fn();
+    const fields = {
+      lookback: '1h',
+      operation: 'all',
+      resultsLimit: 20,
+      service: 'svcA',
+    };
+
+    submitForm(fields, searchTraces, '1m', true);
+
+    expect(searchTraces).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: 'svcA',
+      })
+    );
+  });
+
+  it('should not apply adjustEndTime when adjustTimeEnabled is false', () => {
+    const searchTraces = jest.fn();
+    const fields = {
+      lookback: '1h',
+      operation: 'all',
+      resultsLimit: 20,
+      service: 'svcA',
+    };
+
+    submitForm(fields, searchTraces, '1m', false);
+
+    expect(searchTraces).toHaveBeenCalledWith(
+      expect.objectContaining({
+        service: 'svcA',
+      })
+    );
+  });
+});
+
+describe('mapDispatchToProps()', () => {
+  it('creates the actions correctly', () => {
+    expect(mapDispatchToProps(() => {})).toEqual({
+      searchTraces: expect.any(Function),
+      submitFormHandler: expect.any(Function),
+    });
   });
 });

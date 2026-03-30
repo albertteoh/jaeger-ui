@@ -1,24 +1,13 @@
 // Copyright (c) 2020 The Jaeger Authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import generateColor from './generateColor';
 import transformTraceData from '../../../model/transform-trace-data';
 import { getColumnValuesSecondDropdown, getColumnValues } from './tableValues';
 
-const testTrace = require('./tableValuesTestTrace/testTrace.json');
+import testTrace from './tableValuesTestTrace/testTrace.json';
 
-const transformedTrace = transformTraceData(testTrace);
+const transformedTrace = transformTraceData(testTrace).asOtelTrace();
 
 describe('generateColor', () => {
   it('check generateColor to count, one NameSelector is selected', () => {
@@ -115,5 +104,17 @@ describe('generateColor', () => {
     expect(tableValue2[1].isDetail).toBe(true);
     expect(tableValue2[1].total).toBe(390);
     expect(tableValue2[1].colorToPercent).toBe('rgb(248,248,248)');
+  });
+
+  it('covers percent attribute with colorToPercent=true', () => {
+    const input = [
+      { isDetail: false, percent: 75 },
+      { isDetail: false, percent: 25 },
+    ];
+
+    const output = generateColor(input, 'percent', true);
+
+    expect(output[0].colorToPercent).toBe('rgb(248,111.5,111.5)');
+    expect(output[1].colorToPercent).toBe('rgb(248,194.5,194.5)');
   });
 });

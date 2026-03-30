@@ -1,16 +1,5 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import * as React from 'react';
 import { Table, Tag } from 'antd';
@@ -36,7 +25,7 @@ const { Column } = Table;
 
 const defaultRowSelection = {
   hideDefaultSelections: true,
-  type: 'radio' as 'radio',
+  type: 'radio' as const,
 };
 
 export const NEED_MORE_TRACES_MESSAGE = (
@@ -45,9 +34,8 @@ export const NEED_MORE_TRACES_MESSAGE = (
   </h3>
 );
 
-export default class CohortTable extends React.PureComponent<Props> {
-  getCheckboxProps = (record: FetchedTrace) => {
-    const { current, selection } = this.props;
+const CohortTable: React.FC<Props> = ({ cohort, current, selection, selectTrace }) => {
+  const getCheckboxProps = (record: FetchedTrace) => {
     const { id, state } = record;
     if (state === fetchedState.ERROR || (id in selection && id !== current)) {
       return { disabled: true };
@@ -55,17 +43,15 @@ export default class CohortTable extends React.PureComponent<Props> {
     return {};
   };
 
-  render() {
-    const { cohort, current, selection, selectTrace } = this.props;
-    const rowSelection = {
-      ...defaultRowSelection,
-      getCheckboxProps: this.getCheckboxProps,
-      // TODO: Antd Table believes onChange can be called with a string or number, but that seems wrong
-      onChange: (ids: number[] | string[]) => selectTrace(ids[0] as string),
-      selectedRowKeys: current ? [current] : [],
-    };
+  const rowSelection = {
+    ...defaultRowSelection,
+    getCheckboxProps,
+    onChange: (selectedRowKeys: React.Key[], selectedRows: FetchedTrace[]) => selectTrace(selectedRows[0].id),
+    selectedRowKeys: current ? [current] : [],
+  };
 
-    return [
+  return (
+    <>
       <Table
         key="table"
         size="middle"
@@ -78,13 +64,15 @@ export default class CohortTable extends React.PureComponent<Props> {
           key="traceID"
           title=""
           dataIndex="id"
+          data-testid="id"
           render={value => <span className="u-tx-muted">{value && value.slice(0, 7)}</span>}
         />
         <Column
           key="traceName"
           title="Service &amp; Operation"
           sortOrder="descend"
-          dataIndex="data.traceName"
+          dataIndex={['data', 'traceName']}
+          data-testid="traceName"
           render={(_, record: FetchedTrace) => {
             const { data, error, id, state } = record;
             const { traceName = undefined } = data || {};
@@ -109,7 +97,8 @@ export default class CohortTable extends React.PureComponent<Props> {
         />
         <Column
           title="Date"
-          dataIndex="data.startTime"
+          dataIndex={['data', 'startTime']}
+          data-testid="startTime"
           key="startTime"
           render={(value, record: FetchedTrace) =>
             record.state === fetchedState.DONE && (
@@ -119,21 +108,25 @@ export default class CohortTable extends React.PureComponent<Props> {
         />
         <Column
           title="Duration"
-          dataIndex="data.duration"
+          dataIndex={['data', 'duration']}
+          data-testid="duration"
           key="duration"
           render={(value, record: FetchedTrace) =>
             record.state === fetchedState.DONE && formatDuration(value)
           }
         />
-        <Column title="Spans" dataIndex="data.spans.length" key="spans" />
+        <Column title="Spans" dataIndex={['data', 'spans', 'length']} key="spans" />
         <Column
           className="ub-tx-center"
-          dataIndex="data.traceID"
+          dataIndex={['data', 'traceID']}
+          data-testid="traceID"
           key="link"
           render={value => <TraceTimelineLink traceID={value} />}
         />
-      </Table>,
-      cohort.length < 2 && NEED_MORE_TRACES_MESSAGE,
-    ];
-  }
-}
+      </Table>
+      {cohort.length < 2 && NEED_MORE_TRACES_MESSAGE}
+    </>
+  );
+};
+
+export default React.memo(CohortTable);

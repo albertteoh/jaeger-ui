@@ -1,22 +1,9 @@
 // Copyright (c) 2018 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import * as React from 'react';
-import { History as RouterHistory } from 'history';
-import queryString from 'query-string';
+import { useNavigate } from 'react-router-dom';
 import { connect } from 'react-redux';
-import { match } from 'react-router-dom';
 import { bindActionCreators, Dispatch } from 'redux';
 
 import { actions as diffActions } from './duck';
@@ -30,6 +17,8 @@ import TTraceDiffState from '../../types/TTraceDiffState';
 import pluckTruthy from '../../utils/ts/pluckTruthy';
 
 import './TraceDiff.css';
+import parseQuery from '../../utils/parseQuery';
+import withRouteProps from '../../utils/withRouteProps';
 
 type TStateProps = {
   a: string | undefined;
@@ -45,12 +34,8 @@ type TDispatchProps = {
 };
 
 type TOwnProps = {
-  history: RouterHistory;
-  match: match<TDiffRouteParams>;
-};
-
-type TState = {
-  graphTopOffset: number;
+  params: TDiffRouteParams & { id?: string };
+  search?: string;
 };
 
 function syncStates(
@@ -76,96 +61,115 @@ function syncStates(
   }
 }
 
-// export class TraceDiffImpl extends React.PureComponent<Props, State> {
-export class TraceDiffImpl extends React.PureComponent<TStateProps & TDispatchProps & TOwnProps, TState> {
-  state = {
-    graphTopOffset: TOP_NAV_HEIGHT,
-  };
+export function TraceDiffImpl({
+  a,
+  b,
+  cohort,
+  tracesData,
+  traceDiffState,
+  fetchMultipleTraces,
+  forceState,
+}: TStateProps & TDispatchProps & TOwnProps) {
+  const navigate = useNavigate();
+  const [graphTopOffset, setGraphTopOffset] = React.useState(TOP_NAV_HEIGHT);
+  const headerWrapperElmRef = React.useRef<HTMLDivElement | null>(null);
 
-  headerWrapperElm: HTMLDivElement | TNil = null;
-
-  componentDidMount() {
-    this.processProps();
-  }
-
-  componentDidUpdate() {
-    this.setGraphTopOffset();
-    this.processProps();
-  }
-
-  headerWrapperRef = (elm: HTMLDivElement | TNil) => {
-    this.headerWrapperElm = elm;
-    this.setGraphTopOffset();
-  };
-
-  setGraphTopOffset() {
-    if (this.headerWrapperElm) {
-      const graphTopOffset = TOP_NAV_HEIGHT + this.headerWrapperElm.clientHeight;
-      if (this.state.graphTopOffset !== graphTopOffset) {
-        this.setState({ graphTopOffset });
-      }
+  const setGraphTopOffsetCallback = React.useCallback(() => {
+    if (headerWrapperElmRef.current && headerWrapperElmRef.current.clientHeight !== undefined) {
+      const newGraphTopOffset = TOP_NAV_HEIGHT + headerWrapperElmRef.current.clientHeight;
+      setGraphTopOffset(prevOffset => {
+        if (prevOffset !== newGraphTopOffset) {
+          return newGraphTopOffset;
+        }
+        return prevOffset;
+      });
     } else {
-      this.setState({ graphTopOffset: TOP_NAV_HEIGHT });
+      setGraphTopOffset(TOP_NAV_HEIGHT);
     }
-  }
+  }, []);
 
-  processProps() {
-    const { a, b, cohort, fetchMultipleTraces, forceState, tracesData, traceDiffState } = this.props;
+  const processProps = React.useCallback(() => {
     syncStates({ a, b, cohort }, traceDiffState, forceState);
     const cohortData = cohort.map(id => tracesData.get(id) || { id, state: null });
     const needForDiffs = cohortData.filter(ft => ft.state == null).map(ft => ft.id);
     if (needForDiffs.length) {
       fetchMultipleTraces(needForDiffs);
     }
-  }
+  }, [a, b, cohort, traceDiffState, forceState, tracesData, fetchMultipleTraces]);
 
-  diffSetUrl(change: { newA?: string | TNil; newB?: string | TNil }) {
-    const { newA, newB } = change;
-    const { a, b, cohort, history } = this.props;
-    const url = getUrl({ a: newA || a, b: newB || b, cohort });
-    history.push(url);
-  }
+  const diffSetUrl = React.useCallback(
+    (change: { newA?: string | TNil; newB?: string | TNil }) => {
+      const { newA, newB } = change;
+      const url = getUrl({ a: newA || a, b: newB || b, cohort });
+      navigate(url);
+    },
+    [a, b, cohort, navigate]
+  );
 
-  diffSetA = (id: string) => {
-    const newA = id.toLowerCase();
-    this.diffSetUrl({ newA });
-  };
+  const diffSetA = React.useCallback(
+    (id: string) => {
+      const newA = id.toLowerCase();
+      diffSetUrl({ newA });
+    },
+    [diffSetUrl]
+  );
 
-  diffSetB = (id: string) => {
-    const newB = id.toLowerCase();
-    this.diffSetUrl({ newB });
-  };
+  const diffSetB = React.useCallback(
+    (id: string) => {
+      const newB = id.toLowerCase();
+      diffSetUrl({ newB });
+    },
+    [diffSetUrl]
+  );
 
-  render() {
-    const { a, b, cohort, tracesData } = this.props;
-    const { graphTopOffset } = this.state;
-    const traceA = a ? tracesData.get(a) || { id: a } : null;
-    const traceB = b ? tracesData.get(b) || { id: b } : null;
-    const cohortData: FetchedTrace[] = cohort.map(id => tracesData.get(id) || { id });
-    return (
-      <React.Fragment>
-        <div key="header" ref={this.headerWrapperRef}>
-          <TraceDiffHeader
-            key="header"
-            a={traceA}
-            b={traceB}
-            cohort={cohortData}
-            diffSetA={this.diffSetA}
-            diffSetB={this.diffSetB}
-          />
-        </div>
-        <div key="graph" className="TraceDiff--graphWrapper" style={{ top: graphTopOffset }}>
-          <TraceDiffGraph a={traceA} b={traceB} />
-        </div>
-      </React.Fragment>
-    );
-  }
+  React.useEffect(() => {
+    processProps();
+  }, [processProps]);
+
+  React.useEffect(() => {
+    setGraphTopOffsetCallback();
+  }, [setGraphTopOffsetCallback]);
+
+  const traceA = a ? tracesData.get(a) || { id: a } : null;
+  const traceB = b ? tracesData.get(b) || { id: b } : null;
+  const cohortData: FetchedTrace[] = cohort.map(id => tracesData.get(id) || { id });
+
+  return (
+    <React.Fragment>
+      <div key="header" ref={headerWrapperElmRef}>
+        <TraceDiffHeader
+          key="header"
+          a={traceA}
+          b={traceB}
+          cohort={cohortData}
+          diffSetA={diffSetA}
+          diffSetB={diffSetB}
+        />
+      </div>
+      <div key="graph" className="TraceDiff--graphWrapper" style={{ top: graphTopOffset }}>
+        <TraceDiffGraph a={traceA} b={traceB} />
+      </div>
+    </React.Fragment>
+  );
 }
 
 // TODO(joe): simplify but do not invalidate the URL
-export function mapStateToProps(state: ReduxState, ownProps: { match: match<TDiffRouteParams> }) {
-  const { a, b } = ownProps.match.params;
-  const { cohort: origCohort = [] } = queryString.parse(state.router.location.search);
+export function mapStateToProps(state: ReduxState, ownProps: TOwnProps) {
+  let { a, b, id } = ownProps.params;
+  /*
+  In v5, the route pattern /trace/:a?\.\.\.":b? 
+  tells the router to split the path segment at ... automatically, 
+  giving the component two separate params.
+  But in v6, that regex-style pattern is not supported, so the route never matched. 
+  We replaced it with /trace/:id, which gives a single param: params.id = '73b4e476...9c18cb9d'.
+  This code then manually splits that string on ... to get a and b
+  */
+  if (!a && id && id.includes('...')) {
+    const parts = id.split('...');
+    a = parts[0] || undefined;
+    b = parts[1] || undefined;
+  }
+  const { cohort: origCohort = [] } = parseQuery(ownProps.search || '');
   const fullCohortSet: Set<string> = new Set(pluckTruthy([a, b].concat(origCohort)));
   const cohort: string[] = Array.from(fullCohortSet);
   const { traces } = state.trace;
@@ -181,13 +185,15 @@ export function mapStateToProps(state: ReduxState, ownProps: { match: match<TDif
 }
 
 // export for tests
-export function mapDispatchToProps(dispatch: Dispatch<any>) {
+export function mapDispatchToProps(dispatch: Dispatch<ReduxState>) {
   const { fetchMultipleTraces } = bindActionCreators(jaegerApiActions, dispatch);
   const { forceState } = bindActionCreators(diffActions, dispatch);
   return { fetchMultipleTraces, forceState };
 }
 
-export default connect<TStateProps, TDispatchProps, TOwnProps, ReduxState>(
-  mapStateToProps,
-  mapDispatchToProps
-)(TraceDiffImpl);
+export default withRouteProps(
+  connect<TStateProps, TDispatchProps, TOwnProps, ReduxState>(
+    mapStateToProps,
+    mapDispatchToProps
+  )(TraceDiffImpl)
+);

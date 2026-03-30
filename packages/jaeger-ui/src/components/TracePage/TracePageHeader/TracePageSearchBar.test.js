@@ -1,95 +1,122 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import React from 'react';
-import { shallow } from 'enzyme';
-
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import '@testing-library/jest-dom';
 import * as markers from './TracePageSearchBar.markers';
 import DefaultTracePageSearchBar, { TracePageSearchBarFn as TracePageSearchBar } from './TracePageSearchBar';
-import { trackFilter } from '../index.track';
-import UiFindInput from '../../common/UiFindInput';
+
+jest.mock('../index.track', () => ({
+  trackFilter: jest.fn(),
+}));
+
+jest.mock('../../common/UiFindInput', () => {
+  const React = jest.requireActual('react');
+  return React.forwardRef(function MockUiFindInput({ inputProps, trackFindFunction }, ref) {
+    return (
+      <div data-testid="ui-find-input-wrapper">
+        <input
+          ref={ref}
+          data-testid="ui-find-input"
+          data-test={inputProps['data-test']}
+          className={inputProps.className}
+          name={inputProps.name}
+          onChange={() => trackFindFunction && trackFindFunction()}
+          placeholder="Search..."
+        />
+        {inputProps.suffix}
+      </div>
+    );
+  });
+});
 
 const defaultProps = {
   forwardedRef: React.createRef(),
   navigable: true,
-  nextResult: () => {},
-  prevResult: () => {},
+  nextResult: jest.fn(),
+  prevResult: jest.fn(),
+  clearSearch: jest.fn(),
+  focusUiFindMatches: jest.fn(),
   resultCount: 0,
   textFilter: 'something',
 };
 
 describe('<TracePageSearchBar>', () => {
-  let wrapper;
-
-  beforeEach(() => {
-    wrapper = shallow(<TracePageSearchBar {...defaultProps} />);
+  afterEach(() => {
+    cleanup();
+    jest.clearAllMocks();
   });
 
   describe('truthy textFilter', () => {
+    let wrapper;
+
+    beforeEach(() => {
+      wrapper = render(<TracePageSearchBar {...defaultProps} />);
+    });
+
     it('renders UiFindInput with correct props', () => {
-      const renderedUiFindInput = wrapper.find(UiFindInput);
-      const suffix = shallow(renderedUiFindInput.prop('inputProps').suffix);
-      expect(renderedUiFindInput.prop('inputProps')).toEqual(
-        expect.objectContaining({
-          'data-test': markers.IN_TRACE_SEARCH,
-          className: 'TracePageSearchBar--bar ub-flex-auto',
-          name: 'search',
-        })
-      );
-      expect(suffix.hasClass('TracePageSearchBar--count')).toBe(true);
-      expect(suffix.text()).toBe(String(defaultProps.resultCount));
-      expect(renderedUiFindInput.prop('forwardedRef')).toBe(defaultProps.forwardedRef);
-      expect(renderedUiFindInput.prop('trackFindFunction')).toBe(trackFilter);
+      const uiFindInput = screen.getByTestId('ui-find-input');
+      const suffixElement = screen.getByText(String(defaultProps.resultCount));
+
+      expect(uiFindInput).toHaveAttribute('data-test', markers.IN_TRACE_SEARCH);
+      expect(uiFindInput).toHaveClass('TracePageSearchBar--bar', 'ub-flex-auto');
+      expect(uiFindInput).toHaveAttribute('name', 'search');
+      expect(suffixElement).toBeInTheDocument();
+      expect(suffixElement).toHaveClass('TracePageSearchBar--count');
+      expect(suffixElement).toHaveTextContent(String(defaultProps.resultCount));
     });
 
     it('renders buttons', () => {
-      const buttons = wrapper.find('Button');
-      expect(buttons.length).toBe(4);
+      const buttons = screen.getAllByRole('button');
+      expect(buttons).toHaveLength(3);
+
       buttons.forEach(button => {
-        expect(button.hasClass('TracePageSearchBar--btn')).toBe(true);
-        expect(button.hasClass('is-disabled')).toBe(false);
-        expect(button.prop('disabled')).toBe(false);
+        expect(button).toHaveClass('TracePageSearchBar--btn');
+        expect(button).not.toHaveClass('is-disabled');
+        expect(button).not.toBeDisabled();
       });
-      expect(wrapper.find('Button[icon="up"]').prop('onClick')).toBe(defaultProps.prevResult);
-      expect(wrapper.find('Button[icon="down"]').prop('onClick')).toBe(defaultProps.nextResult);
-      expect(wrapper.find('Button[icon="close"]').prop('onClick')).toBe(defaultProps.clearSearch);
+
+      const upButton = screen.getByTestId('UpOutlined');
+      const downButton = screen.getByTestId('DownOutlined');
+
+      fireEvent.click(upButton);
+      expect(defaultProps.prevResult).toHaveBeenCalled();
+
+      fireEvent.click(downButton);
+      expect(defaultProps.nextResult).toHaveBeenCalled();
     });
 
     it('hides navigation buttons when not navigable', () => {
-      wrapper.setProps({ navigable: false });
-      const button = wrapper.find('Button');
-      expect(button.length).toBe(1);
-      expect(button.prop('icon')).toBe('close');
+      cleanup();
+      render(<TracePageSearchBar {...defaultProps} navigable={false} />);
+
+      const buttons = screen.queryAllByRole('button');
+      expect(buttons).toHaveLength(0);
     });
   });
 
   describe('falsy textFilter', () => {
     beforeEach(() => {
-      wrapper.setProps({ textFilter: '' });
+      render(<TracePageSearchBar {...defaultProps} textFilter="" />);
     });
 
     it('renders UiFindInput with correct props', () => {
-      expect(wrapper.find(UiFindInput).prop('inputProps').suffix).toBe(null);
+      const uiFindInput = screen.getByTestId('ui-find-input');
+      const suffixElement = screen.queryByText(String(defaultProps.resultCount));
+
+      expect(uiFindInput).toBeInTheDocument();
+      expect(suffixElement).not.toBeInTheDocument();
     });
 
     it('renders buttons', () => {
-      const buttons = wrapper.find('Button');
-      expect(buttons.length).toBe(4);
+      const buttons = screen.getAllByRole('button');
+      expect(buttons).toHaveLength(3);
+
       buttons.forEach(button => {
-        expect(button.hasClass('TracePageSearchBar--btn')).toBe(true);
-        expect(button.hasClass('is-disabled')).toBe(true);
-        expect(button.prop('disabled')).toBe(true);
+        expect(button).toHaveClass('TracePageSearchBar--btn');
+        expect(button).toHaveClass('is-disabled');
+        expect(button).toBeDisabled();
       });
     });
   });
@@ -98,8 +125,18 @@ describe('<TracePageSearchBar>', () => {
 describe('<DefaultTracePageSearchBar>', () => {
   const { forwardedRef: ref, ...propsWithoutRef } = defaultProps;
 
+  afterEach(() => {
+    cleanup();
+  });
+
   it('forwardsRef correctly', () => {
-    const wrapper = shallow(<DefaultTracePageSearchBar {...propsWithoutRef} ref={ref} />);
-    expect(wrapper.find(TracePageSearchBar).props()).toEqual(defaultProps);
+    render(<DefaultTracePageSearchBar {...propsWithoutRef} ref={ref} />);
+    expect(ref.current).not.toBeNull();
+
+    const uiFindInput = screen.getByTestId('ui-find-input');
+    expect(uiFindInput).toBeInTheDocument();
+    expect(uiFindInput).toHaveAttribute('data-test', markers.IN_TRACE_SEARCH);
+    expect(uiFindInput).toHaveClass('TracePageSearchBar--bar', 'ub-flex-auto');
+    expect(uiFindInput).toHaveAttribute('name', 'search');
   });
 });

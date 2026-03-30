@@ -1,19 +1,8 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import React from 'react';
-import { shallow } from 'enzyme';
+import { render } from '@testing-library/react';
 
 import GraphTicks from './GraphTicks';
 
@@ -27,18 +16,20 @@ describe('<GraphTicks>', () => {
     numTicks: 4,
   };
 
-  let ticksG;
+  let container;
 
   beforeEach(() => {
-    const wrapper = shallow(<GraphTicks {...defaultProps} />);
-    ticksG = wrapper.find('[data-test="ticks"]');
+    const { container: c } = render(<GraphTicks {...defaultProps} />);
+    container = c;
   });
 
   it('creates a <g> for ticks', () => {
+    const ticksG = container.querySelectorAll('[data-test="ticks"]');
     expect(ticksG.length).toBe(1);
   });
 
   it('creates a line for each ticks excluding the first and last', () => {
-    expect(ticksG.find('line').length).toBe(defaultProps.numTicks - 1);
+    const lines = container.querySelectorAll('[data-test="ticks"]:nth-child(1) line');
+    expect(lines.length).toBe(defaultProps.numTicks - 1);
   });
 });

@@ -1,16 +1,5 @@
 // Copyright (c) 2019 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import GraphModel, { makeGraph } from './index';
 import { FOCAL_KEY } from './getPathElemHasher';
@@ -212,7 +201,7 @@ describe('GraphModel', () => {
               density: EDdgDensity.PreventPathEntanglement,
               showOp: true,
             })
-        ).toThrowError();
+        ).toThrow();
       });
     });
   });
@@ -236,9 +225,8 @@ describe('GraphModel', () => {
     const { visibilityIdx: targetRootIdx } = upstreamTargets.find(external);
     const leafAndRootVisIndices = [...oneHopIndices, targetLeafIdx, targetRootIdx];
     const leafAndRootVisEncoding = encode(leafAndRootVisIndices);
-    const [hiddenDownstreamTargetNotLeaf, visibleDownstreamTargetNotLeaf] = downstreamTargets.filter(
-      internal
-    );
+    const [hiddenDownstreamTargetNotLeaf, visibleDownstreamTargetNotLeaf] =
+      downstreamTargets.filter(internal);
     const [hiddenUpstreamTargetNotRoot, visibleUpstreamTargetNotRoot] = upstreamTargets.filter(internal);
     const partialTargetVisIndices = [
       ...leafAndRootVisIndices,
@@ -620,9 +608,11 @@ describe('GraphModel', () => {
     const shorten = str => str.substring(0, str.length - 3);
     const visEncoding = encode([0, 1, 2, 3, 4, 5]);
     const { vertices: visibleVertices } = convergentGraph.getVisible(visEncoding);
-    const { key: focalKey, service: focalService, operation: focalOperation } = visibleVertices[
-      visibleVertices.length - 1
-    ];
+    const {
+      key: focalKey,
+      service: focalService,
+      operation: focalOperation,
+    } = visibleVertices[visibleVertices.length - 1];
     const { service: otherService } = visibleVertices[2];
     const { vertices: hiddenOpVertices } = hideOpGraph.getVisible(visEncoding);
     const {
@@ -816,7 +806,7 @@ describe('GraphModel', () => {
     });
 
     it('throws error if given absent vertex', () => {
-      expect(() => overlapGraph.getVisWithVertices(['absent key'])).toThrowError(/does not exist in graph/);
+      expect(() => overlapGraph.getVisWithVertices(['absent key'])).toThrow(/does not exist in graph/);
     });
   });
 

@@ -1,21 +1,14 @@
 // Copyright (c) 2020 The Jaeger Authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
-import * as reactRouterDom from 'react-router-dom';
+import * as reactRouterDomCompat from 'react-router-dom';
 
 import { MAX_LENGTH } from '../DeepDependencies/Graph/DdgNodeContent/constants';
 import { ROUTE_PATH, getUrl, getUrlState, isSameQuery, matches } from './url';
+
+jest.mock('react-router-dom', () => ({
+  matchPath: jest.fn(),
+}));
 
 describe('SearchTracePage/url', () => {
   const span0 = 'span-0';
@@ -30,16 +23,12 @@ describe('SearchTracePage/url', () => {
     let matchPathSpy;
 
     beforeAll(() => {
-      matchPathSpy = jest.spyOn(reactRouterDom, 'matchPath');
+      matchPathSpy = jest.spyOn(reactRouterDomCompat, 'matchPath');
     });
 
     it('calls matchPath with expected arguments', () => {
       matches(path);
-      expect(matchPathSpy).toHaveBeenLastCalledWith(path, {
-        path: ROUTE_PATH,
-        strict: true,
-        exact: true,
-      });
+      expect(matchPathSpy).toHaveBeenLastCalledWith(ROUTE_PATH, path);
     });
 
     it("returns truthiness of matchPath's return value", () => {
@@ -240,7 +229,6 @@ describe('SearchTracePage/url', () => {
 
     it('returns `false` if a considered key is changed or omitted', () => {
       queryKeys.forEach(key => {
-        // eslint-disable-next-line camelcase
         const { [key]: _omitted, ...rest } = baseQuery;
         expect(isSameQuery(baseQuery, rest)).toBe(false);
         expect(isSameQuery(baseQuery, { ...rest, [key]: 'changed' })).toBe(false);
@@ -250,7 +238,6 @@ describe('SearchTracePage/url', () => {
     it('returns `true` if no considered keys are changed or omitted', () => {
       expect(isSameQuery(baseQuery, { ...baseQuery })).toBe(true);
 
-      // eslint-disable-next-line camelcase
       const { [otherKey]: _omitted, ...copy } = baseQuery;
       expect(isSameQuery(baseQuery, copy)).toBe(true);
       expect(isSameQuery(baseQuery, { ...copy, [otherKey]: 'changed' })).toBe(true);

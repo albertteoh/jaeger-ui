@@ -1,17 +1,7 @@
 // Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
+import React from 'react';
 import _set from 'lodash/set';
 import queryString from 'query-string';
 
@@ -28,7 +18,6 @@ describe('extractDecorationFromState', () => {
     const state = {};
     const deco = Array.isArray(decoration) ? decoration[0] : decoration;
 
-    _set(state, 'router.location.search', decoration ? queryString.stringify({ decoration }) : '');
     if (opValue !== undefined)
       _set(state, `pathAgnosticDecorations.${deco}.withOp.${service}.${operation}`, opValue);
     if (opMax !== undefined) _set(state, `pathAgnosticDecorations.${deco}.withOpMax`, opMax);
@@ -40,7 +29,10 @@ describe('extractDecorationFromState', () => {
   }
 
   function extractWrapper(stateArgs, svpOp = { service, operation }) {
-    return extractDecorationFromState(makeState(stateArgs), svpOp);
+    const state = makeState(stateArgs);
+    const deco = stateArgs.decoration !== undefined ? stateArgs.decoration : decorationID;
+    const search = deco ? queryString.stringify({ decoration: deco }) : '';
+    return extractDecorationFromState(state, { ...svpOp, search });
   }
 
   it('returns an empty object if url lacks a decorationID', () => {
@@ -62,7 +54,17 @@ describe('extractDecorationFromState', () => {
         decorationValue,
       })
     );
-    expect(res.decorationProgressbar).toMatchSnapshot();
+    expect(res.decorationProgressbar).toBeDefined();
+    expect(React.isValidElement(res.decorationProgressbar)).toBe(true);
+    expect(res.decorationProgressbar.props).toEqual({
+      backgroundHue: 120,
+      decorationHue: 0,
+      maxValue: decorationMax,
+      strokeWidth: 10,
+      text: '42',
+      value: decorationValue,
+    });
+    expect(res.decorationProgressbar.key).toBe(`${service}\t${operation}`);
   });
 
   it('returns service decoration', () => {
@@ -76,7 +78,17 @@ describe('extractDecorationFromState', () => {
         decorationValue,
       })
     );
-    expect(res.decorationProgressbar).toMatchSnapshot();
+    expect(res.decorationProgressbar).toBeDefined();
+    expect(React.isValidElement(res.decorationProgressbar)).toBe(true);
+    expect(res.decorationProgressbar.props).toEqual({
+      backgroundHue: 120,
+      decorationHue: 0,
+      maxValue: decorationMax,
+      strokeWidth: 10,
+      text: '42',
+      value: decorationValue,
+    });
+    expect(res.decorationProgressbar.key).toBe(`${service}\t${operation}`);
   });
 
   it('omits CircularProgressbar if value is a string', () => {
@@ -90,6 +102,11 @@ describe('extractDecorationFromState', () => {
       decorationValue: withoutOpValue,
       decorationProgressbar: undefined,
     });
+  });
+
+  it('defaults search to empty string when not provided, returning empty object', () => {
+    const state = makeState({ opValue: decorationValue, opMax: decorationMax });
+    expect(extractDecorationFromState(state, { service, operation })).toEqual({});
   });
 
   it('uses first decoration if multiple exist in url', () => {

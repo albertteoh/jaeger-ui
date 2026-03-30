@@ -1,16 +1,5 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import * as React from 'react';
 import memoizeOne from 'memoize-one';
@@ -19,14 +8,16 @@ import CanvasSpanGraph from './CanvasSpanGraph';
 import TickLabels from './TickLabels';
 import ViewingLayer from './ViewingLayer';
 import { TUpdateViewRangeTimeFunction, IViewRange, ViewRangeTimeUpdate } from '../../types';
-import { Span, Trace } from '../../../../types/trace';
+import { IOtelSpan, IOtelTrace } from '../../../../types/otel';
+
+import './SpanGraph.css';
 
 const DEFAULT_HEIGHT = 60;
 const TIMELINE_TICK_INTERVAL = 4;
 
 type SpanGraphProps = {
   height?: number;
-  trace: Trace;
+  trace: IOtelTrace;
   viewRange: IViewRange;
   updateViewRangeTime: TUpdateViewRangeTimeFunction;
   updateNextViewRangeTime: (nextUpdate: ViewRangeTimeUpdate) => void;
@@ -38,15 +29,15 @@ type SpanItem = {
   serviceName: string;
 };
 
-function getItem(span: Span): SpanItem {
+function getItem(span: IOtelSpan): SpanItem {
   return {
     valueOffset: span.relativeStartTime,
     valueWidth: span.duration,
-    serviceName: span.process.serviceName,
+    serviceName: span.resource.serviceName,
   };
 }
 
-function getItems(trace: Trace): SpanItem[] {
+function getItems(trace: IOtelTrace): SpanItem[] {
   return trace.spans.map(getItem);
 }
 
@@ -65,7 +56,7 @@ export default class SpanGraph extends React.PureComponent<SpanGraphProps> {
 
     const items = memoizedGetItems(trace);
     return (
-      <div className="ub-pb2 ub-px2">
+      <div className="SpanGraph ub-pb2 ub-px2">
         <TickLabels numTicks={TIMELINE_TICK_INTERVAL} duration={trace.duration} />
         <div className="ub-relative">
           <CanvasSpanGraph valueWidth={trace.duration} items={items} />

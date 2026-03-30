@@ -1,22 +1,11 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
-import * as React from 'react';
+import React, { useRef, useEffect } from 'react';
 
 import renderIntoCanvas from './render-into-canvas';
 import colorGenerator from '../../../../utils/color-generator';
-import { TNil } from '../../../../types';
+import { useThemeMode } from '../../../App/ThemeProvider';
 
 import './CanvasSpanGraph.css';
 
@@ -25,36 +14,23 @@ type CanvasSpanGraphProps = {
   valueWidth: number;
 };
 
-const getColor = (hex: string) => colorGenerator.getRgbColorByKey(hex);
+export const getColor = (hex: string) => colorGenerator.getRgbColorByKey(hex);
 
-export default class CanvasSpanGraph extends React.PureComponent<CanvasSpanGraphProps> {
-  _canvasElm: HTMLCanvasElement | TNil;
+const CanvasSpanGraph: React.FC<CanvasSpanGraphProps> = ({ items, valueWidth }) => {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const { mode } = useThemeMode();
 
-  constructor(props: CanvasSpanGraphProps) {
-    super(props);
-    this._canvasElm = undefined;
-  }
-
-  componentDidMount() {
-    this._draw();
-  }
-
-  componentDidUpdate() {
-    this._draw();
-  }
-
-  _setCanvasRef = (elm: HTMLCanvasElement | TNil) => {
-    this._canvasElm = elm;
-  };
-
-  _draw() {
-    if (this._canvasElm) {
-      const { valueWidth: totalValueWidth, items } = this.props;
-      renderIntoCanvas(this._canvasElm, items, totalValueWidth, getColor);
+  useEffect(() => {
+    if (canvasRef.current) {
+      const backgroundColor = window
+        .getComputedStyle(document.documentElement)
+        .getPropertyValue('--surface-primary')
+        .trim();
+      renderIntoCanvas(canvasRef.current, items, valueWidth, getColor, backgroundColor || undefined);
     }
-  }
+  }, [items, valueWidth, mode]);
 
-  render() {
-    return <canvas className="CanvasSpanGraph" ref={this._setCanvasRef} />;
-  }
-}
+  return <canvas className="CanvasSpanGraph" ref={canvasRef} />;
+};
+
+export default CanvasSpanGraph;

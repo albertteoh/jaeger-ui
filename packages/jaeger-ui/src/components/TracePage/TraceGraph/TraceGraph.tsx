@@ -1,22 +1,11 @@
 // Copyright (c) 2018 The Jaeger Authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import * as React from 'react';
-import { Card, Icon, Button, Tooltip } from 'antd';
+import { Card, Button, Tooltip } from 'antd';
+import { IoClose, IoHelpCircleOutline } from 'react-icons/io5';
 import cx from 'classnames';
-import { Digraph, LayoutManager } from '@jaegertracing/plexus';
-import cacheAs from '@jaegertracing/plexus/lib/cacheAs';
+import { Digraph, LayoutManager, cacheAs } from '@jaegertracing/plexus';
 
 import {
   getNodeRenderer,
@@ -25,12 +14,13 @@ import {
   MODE_SERVICE,
   MODE_TIME,
   MODE_SELFTIME,
-  HELP_TABLE,
+  getHelpTable,
 } from './OpNode';
 import { TEv, TSumSpan } from './types';
 import { TDenseSpanMembers } from '../../../model/trace-dag/types';
 import TDagPlexusVertex from '../../../model/trace-dag/types/TDagPlexusVertex';
 import { TNil } from '../../../types';
+import { TraceGraphConfig } from '../../../types/config';
 
 import './TraceGraph.css';
 
@@ -39,6 +29,8 @@ type Props = {
   ev?: TEv | TNil;
   uiFind: string | TNil;
   uiFindVertexKeys: Set<string> | TNil;
+  traceGraphConfig?: TraceGraphConfig;
+  useOtelTerms: boolean;
 };
 type State = {
   showHelp: boolean;
@@ -48,18 +40,18 @@ type State = {
 const { classNameIsSmall, scaleOpacity, scaleStrokeOpacity } = Digraph.propsFactories;
 
 export function setOnEdgePath(e: any) {
-  return e.followsFrom ? { strokeDasharray: 4 } : {};
+  return e.isNonBlocking ? { strokeDasharray: 4 } : {};
 }
 
-const HELP_CONTENT = (
-  <div className="TraceGraph--help-content">
-    {HELP_TABLE}
+export const getHelpContent = (useOtelTerms: boolean) => (
+  <div className="TraceGraph--help-content" data-testid="help-content">
+    {getHelpTable(useOtelTerms)}
     <div>
       <table>
         <tbody>
           <tr>
             <td>
-              <Button htmlType="button" shape="circle" size="small">
+              <Button htmlType="button" shape="circle" size="small" className="active">
                 S
               </Button>
             </td>
@@ -101,7 +93,7 @@ const HELP_CONTENT = (
           style={{ stroke: '#000', strokeWidth: 2, strokeDasharray: '4' }}
         />
         <text alignmentBaseline="middle" x="100" y="30">
-          FollowsFrom
+          Non-Blocking
         </text>
       </svg>
     </div>
@@ -115,8 +107,6 @@ const HELP_CONTENT = (
 export default class TraceGraph extends React.PureComponent<Props, State> {
   state: State;
 
-  cache: any;
-
   layoutManager: LayoutManager;
 
   static defaultProps = {
@@ -129,7 +119,11 @@ export default class TraceGraph extends React.PureComponent<Props, State> {
       showHelp: false,
       mode: MODE_SERVICE,
     };
-    this.layoutManager = new LayoutManager({ useDotEdges: true, splines: 'polyline' });
+    this.layoutManager = new LayoutManager({
+      totalMemory: props.traceGraphConfig?.layoutManagerMemory,
+      useDotEdges: true,
+      splines: 'polyline',
+    });
   }
 
   componentWillUnmount() {
@@ -149,7 +143,7 @@ export default class TraceGraph extends React.PureComponent<Props, State> {
   };
 
   render() {
-    const { ev, headerHeight, uiFind, uiFindVertexKeys } = this.props;
+    const { ev, headerHeight, uiFind, uiFindVertexKeys, useOtelTerms } = this.props;
     const { showHelp, mode } = this.state;
     if (!ev) {
       return <h1 className="u-mt-vast u-tx-muted ub-tx-center">No trace found</h1>;
@@ -191,7 +185,7 @@ export default class TraceGraph extends React.PureComponent<Props, State> {
               key: 'nodes',
               layerType: 'html',
               measurable: true,
-              renderNode: cacheAs(`trace-graph/nodes/render/${mode}`, getNodeRenderer(mode)),
+              renderNode: cacheAs(`trace-graph/nodes/render/${mode}`, getNodeRenderer(mode, useOtelTerms)),
             },
           ]}
           setOnGraph={classNameIsSmall}
@@ -209,12 +203,12 @@ export default class TraceGraph extends React.PureComponent<Props, State> {
         <div className="TraceGraph--sidebar-container">
           <ul className="TraceGraph--menu">
             <li>
-              <Icon type="question-circle" onClick={this.showHelp} />
+              <IoHelpCircleOutline onClick={this.showHelp} data-testid="help-icon" />
             </li>
             <li>
               <Tooltip placement="left" title="Service">
                 <Button
-                  className="TraceGraph--btn-service"
+                  className={cx('TraceGraph--btn-service', { active: mode === MODE_SERVICE })}
                   htmlType="button"
                   shape="circle"
                   size="small"
@@ -227,7 +221,7 @@ export default class TraceGraph extends React.PureComponent<Props, State> {
             <li>
               <Tooltip placement="left" title="Time">
                 <Button
-                  className="TraceGraph--btn-time"
+                  className={cx('TraceGraph--btn-time', { active: mode === MODE_TIME })}
                   htmlType="button"
                   shape="circle"
                   size="small"
@@ -240,7 +234,7 @@ export default class TraceGraph extends React.PureComponent<Props, State> {
             <li>
               <Tooltip placement="left" title="Selftime">
                 <Button
-                  className="TraceGraph--btn-selftime"
+                  className={cx('TraceGraph--btn-selftime', { active: mode === MODE_SELFTIME })}
                   htmlType="button"
                   shape="circle"
                   size="small"
@@ -256,12 +250,12 @@ export default class TraceGraph extends React.PureComponent<Props, State> {
               title="Help"
               bordered={false}
               extra={
-                <a onClick={this.closeSidebar} role="button">
-                  <Icon type="close" />
+                <a onClick={this.closeSidebar} role="button" aria-label="Close">
+                  <IoClose />
                 </a>
               }
             >
-              {HELP_CONTENT}
+              {getHelpContent(useOtelTerms)}
             </Card>
           )}
         </div>

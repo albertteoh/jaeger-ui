@@ -1,57 +1,63 @@
 // Copyright (c) 2019 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import React from 'react';
-import { Button, Modal } from 'antd';
-import { shallow } from 'enzyme';
+import { render, screen, fireEvent } from '@testing-library/react';
+import '@testing-library/jest-dom';
 
 import KeyboardShortcutsHelp from './KeyboardShortcutsHelp';
-import * as track from './KeyboardShortcutsHelp.track';
+import track from './KeyboardShortcutsHelp.track';
+
+jest.mock('./KeyboardShortcutsHelp.track', () => jest.fn());
+jest.mock('../keyboard-mappings', () => ({}));
 
 describe('KeyboardShortcutsHelp', () => {
-  const testClassName = 'test--ClassName';
-  const wrapper = shallow(<KeyboardShortcutsHelp className={testClassName} />);
-  let trackSpy;
-
-  beforeAll(() => {
-    trackSpy = jest.spyOn(track, 'default');
-  });
-
   beforeEach(() => {
-    trackSpy.mockReset();
+    jest.clearAllMocks();
   });
 
-  it('renders as expected', () => {
-    expect(wrapper.find(Button).hasClass(testClassName)).toBe(true);
-    expect(wrapper).toMatchSnapshot();
+  it('does not render the modal when open is false', () => {
+    render(<KeyboardShortcutsHelp open={false} onClose={jest.fn()} />);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('opens modal and tracks its opening', () => {
-    expect(wrapper.setState({ visible: false }));
-
-    wrapper.find(Button).simulate('click', {});
-    expect(wrapper.state('visible')).toBe(true);
-    expect(trackSpy).toHaveBeenCalled();
+  it('renders the modal when open is true', () => {
+    render(<KeyboardShortcutsHelp open onClose={jest.fn()} />);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText('Keyboard Shortcuts')).toBeInTheDocument();
   });
 
-  it('closes modal', () => {
-    wrapper.setState({ visible: true });
-    wrapper.find(Modal).prop('onOk')();
-    expect(wrapper.state('visible')).toBe(false);
+  it('calls track() when open becomes true', () => {
+    render(<KeyboardShortcutsHelp open onClose={jest.fn()} />);
+    expect(track).toHaveBeenCalledTimes(1);
+  });
 
-    wrapper.setState({ visible: true });
-    wrapper.find(Modal).prop('onCancel')();
-    expect(wrapper.state('visible')).toBe(false);
+  it('does not call track() when open is false', () => {
+    render(<KeyboardShortcutsHelp open={false} onClose={jest.fn()} />);
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it('calls onClose when OK is clicked', () => {
+    const onClose = jest.fn();
+    render(<KeyboardShortcutsHelp open onClose={onClose} />);
+    fireEvent.click(screen.getByText('OK'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onClose when Cancel/Close is clicked', () => {
+    const onClose = jest.fn();
+    render(<KeyboardShortcutsHelp open onClose={onClose} />);
+    fireEvent.click(screen.getByLabelText('Close', { selector: 'button' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the cached kbdTable on a second call to getHelpModal', () => {
+    const onClose = jest.fn();
+    const { unmount } = render(<KeyboardShortcutsHelp open onClose={onClose} />);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    unmount();
+
+    render(<KeyboardShortcutsHelp open onClose={onClose} />);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });

@@ -1,29 +1,18 @@
 // Copyright (c) 2020 The Jaeger Authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
-import { Checkbox } from 'antd';
+import { Checkbox, Select } from 'antd';
 import React, { Component } from 'react';
-import { Trace } from '../../../types/trace';
+import { IOtelTrace } from '../../../types/otel';
 import { ITableSpan } from './types';
 import { generateDropdownValue, generateSecondDropdownValue } from './generateDropdownValue';
-import { getColumnValues, getColumnValuesSecondDropdown } from './tableValues';
-import NameSelector from '../../common/NameSelector';
+import { getColumnValues, getColumnValuesSecondDropdown, getServiceName } from './tableValues';
+import SearchableSelect from '../../common/SearchableSelect';
 import generateColor from './generateColor';
 import './TraceStatisticsHeader.css';
 
 type Props = {
-  trace: Trace;
+  trace: IOtelTrace;
   tableValue: ITableSpan[];
   wholeTable: ITableSpan[];
   handler: (
@@ -32,6 +21,7 @@ type Props = {
     valueNameSelector1: string,
     valueNameSelector2: string | null
   ) => void;
+  useOtelTerms: boolean;
 };
 
 type State = {
@@ -58,15 +48,16 @@ const optionsNameSelector3 = new Map([
 export default class TraceStatisticsHeader extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
+    const serviceName = getServiceName();
     this.props.handler(
-      getColumnValues('Service Name', this.props.trace),
-      getColumnValues('Service Name', this.props.trace),
-      'Service Name',
+      getColumnValues(serviceName, this.props.trace, this.props.useOtelTerms),
+      getColumnValues(serviceName, this.props.trace, this.props.useOtelTerms),
+      serviceName,
       null
     );
 
     this.state = {
-      valueNameSelector1: 'Service Name',
+      valueNameSelector1: serviceName,
       valueNameSelector2: null,
       valueNameSelector3: 'Count',
       checkboxStatus: false,
@@ -98,12 +89,12 @@ export default class TraceStatisticsHeader extends Component<Props, State> {
       valueNameSelector2: null,
     });
     const newTableValue = generateColor(
-      getColumnValues(value, this.props.trace),
+      getColumnValues(value, this.props.trace, this.props.useOtelTerms),
       this.getValue(),
       this.state.checkboxStatus
     );
     const newWohleTable = generateColor(
-      getColumnValues(value, this.props.trace),
+      getColumnValues(value, this.props.trace, this.props.useOtelTerms),
       this.getValue(),
       this.state.checkboxStatus
     );
@@ -122,7 +113,8 @@ export default class TraceStatisticsHeader extends Component<Props, State> {
         this.props.tableValue,
         this.state.valueNameSelector1,
         value,
-        this.props.trace
+        this.props.trace,
+        this.props.useOtelTerms
       ),
       this.getValue(),
       this.state.checkboxStatus
@@ -132,7 +124,8 @@ export default class TraceStatisticsHeader extends Component<Props, State> {
         this.props.wholeTable,
         this.state.valueNameSelector1,
         value,
-        this.props.trace
+        this.props.trace,
+        this.props.useOtelTerms
       ),
       this.getValue(),
       this.state.checkboxStatus
@@ -189,12 +182,12 @@ export default class TraceStatisticsHeader extends Component<Props, State> {
     });
 
     const newTableValue = generateColor(
-      getColumnValues(this.state.valueNameSelector1, this.props.trace),
+      getColumnValues(this.state.valueNameSelector1, this.props.trace, this.props.useOtelTerms),
       this.getValue(),
       this.state.checkboxStatus
     );
     const newWholeTable = generateColor(
-      getColumnValues(this.state.valueNameSelector1, this.props.trace),
+      getColumnValues(this.state.valueNameSelector1, this.props.trace, this.props.useOtelTerms),
       this.getValue(),
       this.state.checkboxStatus
     );
@@ -202,44 +195,68 @@ export default class TraceStatisticsHeader extends Component<Props, State> {
   }
 
   render() {
-    const optionsNameSelector1 = generateDropdownValue(this.props.trace);
+    const optionsNameSelector1 = generateDropdownValue(this.props.trace, this.props.useOtelTerms);
     const optionsNameSelector2 = generateSecondDropdownValue(
-      this.props.wholeTable,
       this.props.trace,
-      this.state.valueNameSelector1
+      this.state.valueNameSelector1,
+      this.props.useOtelTerms
     );
 
     return (
       <div className="TraceStatisticsHeader">
-        <NameSelector
-          label="Group By"
-          placeholder={false}
-          options={optionsNameSelector1}
-          value={this.state.valueNameSelector1}
-          setValue={this.setValueNameSelector1}
-          required
-        />
-        <NameSelector
-          label="Sub-Group"
-          placeholder="No item selected"
-          options={optionsNameSelector2}
-          value={this.state.valueNameSelector2}
-          setValue={this.setValueNameSelector2}
-          clearValue={this.clearValue}
-          required={false}
-        />
-        <div className="colorDropdown--TraceStatisticsHeader">
-          <NameSelector
-            label="Color by"
-            placeholder={false}
-            options={Array.from(optionsNameSelector3.keys())}
-            value={this.state.valueNameSelector3}
-            setValue={this.setValueNameSelector3}
-            required
-          />
-        </div>
-        <div className="checkbox--TraceStatisticsHeader">
-          <Checkbox onChange={this.checkboxButton} />
+        <label className="TraceStatisticsHeader--label">
+          <span className="TraceStatisticsHeader--labelText">Group By:</span>
+          <SearchableSelect
+            className="TraceStatisticsHeader--select"
+            value={this.state.valueNameSelector1}
+            onChange={this.setValueNameSelector1}
+            popupMatchSelectWidth={false}
+            fuzzy
+          >
+            {optionsNameSelector1.map(opt => (
+              <Select.Option key={opt} value={opt}>
+                {opt}
+              </Select.Option>
+            ))}
+          </SearchableSelect>
+        </label>
+        <label className="TraceStatisticsHeader--label">
+          <span className="TraceStatisticsHeader--labelText">Sub-Group:</span>
+          <SearchableSelect
+            className="TraceStatisticsHeader--select"
+            value={this.state.valueNameSelector2}
+            onChange={this.setValueNameSelector2}
+            allowClear
+            onClear={this.clearValue}
+            placeholder="No item selected"
+            popupMatchSelectWidth={false}
+            fuzzy
+          >
+            {optionsNameSelector2.map(opt => (
+              <Select.Option key={opt} value={opt}>
+                {opt}
+              </Select.Option>
+            ))}
+          </SearchableSelect>
+        </label>
+        <div className="TraceStatisticsHeader--colorByWrapper">
+          <Checkbox className="TraceStatisticsHeader--checkbox" onChange={this.checkboxButton} />
+          <label className="TraceStatisticsHeader--label">
+            <span className="TraceStatisticsHeader--labelText">Color by:</span>
+            <SearchableSelect
+              className="TraceStatisticsHeader--select"
+              value={this.state.valueNameSelector3}
+              onChange={this.setValueNameSelector3}
+              popupMatchSelectWidth={false}
+              fuzzy
+            >
+              {Array.from(optionsNameSelector3.keys()).map(opt => (
+                <Select.Option key={opt} value={opt}>
+                  {opt}
+                </Select.Option>
+              ))}
+            </SearchableSelect>
+          </label>
         </div>
       </div>
     );

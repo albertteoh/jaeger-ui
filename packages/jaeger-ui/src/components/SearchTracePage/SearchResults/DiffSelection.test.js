@@ -1,22 +1,12 @@
 // Copyright (c) 2019 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import React from 'react';
-import { shallow } from 'enzyme';
+import { render, screen } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import { MemoryRouter } from 'react-router-dom';
 
-import DiffSelection, { CTA_MESSAGE } from './DiffSelection';
-import ResultItemTitle from './ResultItemTitle';
+import DiffSelection from './DiffSelection';
 import { fetchedState } from '../../../constants';
 
 describe('DiffSelection', () => {
@@ -46,23 +36,56 @@ describe('DiffSelection', () => {
   ];
 
   it('renders a trace as expected', () => {
-    const wrapper = shallow(
-      <DiffSelection traces={traces.slice(0, 1)} toggleComparison={toggleComparison} />
+    render(
+      <MemoryRouter>
+        <DiffSelection traces={traces.slice(0, 1)} toggleComparison={toggleComparison} />
+      </MemoryRouter>
     );
 
-    expect(wrapper.find(ResultItemTitle).length).toBe(1);
-    expect(wrapper).toMatchSnapshot();
+    expect(screen.getByText('1 Selected for comparison')).toBeInTheDocument();
+    expect(screen.getByText('Compare Traces')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '1 Selected for comparison' })).toBeInTheDocument();
   });
 
   it('renders multiple traces as expected', () => {
-    const wrapper = shallow(<DiffSelection traces={traces} toggleComparison={toggleComparison} />);
+    render(
+      <MemoryRouter>
+        <DiffSelection traces={traces} toggleComparison={toggleComparison} />
+      </MemoryRouter>
+    );
 
-    expect(wrapper.find(ResultItemTitle).length).toBe(traces.length);
-    expect(wrapper).toMatchSnapshot();
+    const resultItems = document.querySelectorAll('.ResultItemTitle');
+    expect(resultItems).toHaveLength(traces.length);
+    expect(screen.getByText('2 Selected for comparison')).toBeInTheDocument();
+    expect(screen.getByText('Compare Traces')).toBeInTheDocument();
   });
 
   it('renders CTA_MESSAGE when given empty traces array', () => {
-    const wrapper = shallow(<DiffSelection traces={[]} toggleComparison={toggleComparison} />);
-    expect(wrapper.contains(CTA_MESSAGE)).toBe(true);
+    render(
+      <MemoryRouter>
+        <DiffSelection traces={[]} toggleComparison={toggleComparison} />
+      </MemoryRouter>
+    );
+    expect(screen.getByText('Compare traces by selecting result items')).toBeInTheDocument();
+  });
+
+  it('disables Compare Traces button when cohort length is less than 2', () => {
+    render(
+      <MemoryRouter>
+        <DiffSelection traces={[traces[0]]} toggleComparison={toggleComparison} />
+      </MemoryRouter>
+    );
+    const button = screen.getByRole('button', { name: /Compare Traces/i });
+    expect(button).toBeDisabled();
+  });
+
+  it('enables Compare Traces button when cohort length is 2 or more', () => {
+    render(
+      <MemoryRouter>
+        <DiffSelection traces={traces} toggleComparison={toggleComparison} />
+      </MemoryRouter>
+    );
+    const button = screen.getByRole('button', { name: /Compare Traces/i });
+    expect(button).toBeEnabled();
   });
 });

@@ -1,18 +1,8 @@
 // Copyright (c) 2019 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
-import { shallow } from 'enzyme';
+import { render } from '@testing-library/react';
+import '@testing-library/jest-dom';
 
 import getNodeRenderers from './getNodeRenderers';
 
@@ -41,12 +31,36 @@ describe('getNodeRenderers', () => {
               pathHovered
             )} .is-pathHovered,\tand ${wvwo(focalNode)} .is-focalNode`, () => {
               const testLv = focalNode ? focalLv : lv;
-              const findMatches = new Set(findMatch ? [testLv.vertex.key] : undefined);
+              const findMatches = new Set(findMatch ? [testLv.vertex.key] : []);
               const vm =
-                // eslint-disable-next-line no-bitwise
                 (hovered ? EViewModifier.Hovered : 0) | (pathHovered ? EViewModifier.PathHovered : 0);
               const vms = new Map([[key, vm]]);
-              expect(shallow(getNodeRenderers(findMatches, vms).vectorBorder(testLv))).toMatchSnapshot();
+              const { container } = render(getNodeRenderers(findMatches, vms).vectorBorder(testLv));
+              const circle = container.querySelector('circle');
+
+              expect(circle).toBeInTheDocument();
+              expect(circle).toHaveClass('DdgNode--VectorBorder');
+              expect(circle).toHaveAttribute('vector-effect', 'non-scaling-stroke');
+
+              const expectClass = (className, shouldHave) => {
+                if (shouldHave) {
+                  expect(circle).toHaveClass(className);
+                } else {
+                  expect(circle).not.toHaveClass(className);
+                }
+              };
+
+              expectClass('is-findMatch', findMatch);
+              expectClass('is-hovered', hovered);
+              expectClass('is-pathHovered', pathHovered);
+              expectClass('is-focalNode', focalNode);
+
+              // Verify SVG attributes previously covered by snapshot
+              // r = width / 2 - 1 => 100 / 2 - 1 = 49
+              // cx, cy = width / 2 => 100 / 2 = 50
+              expect(circle).toHaveAttribute('r', '49');
+              expect(circle).toHaveAttribute('cx', '50');
+              expect(circle).toHaveAttribute('cy', '50');
             });
           });
         });
@@ -60,24 +74,30 @@ describe('getNodeRenderers', () => {
     });
 
     it('returns div with .is-findMatch if vertex is a findMatch', () => {
-      const wrapper = shallow(getNodeRenderers(new Set([lv.vertex.key]), new Map()).htmlEmphasis(lv));
-      expect(wrapper.hasClass('is-findMatch')).toBe(true);
-      expect(wrapper.type()).toBe('div');
+      const { container } = render(getNodeRenderers(new Set([lv.vertex.key]), new Map()).htmlEmphasis(lv));
+      const div = container.querySelector('div');
+      expect(div).toBeInTheDocument();
+      expect(div).toHaveClass('DdgNode--HtmlEmphasis');
+      expect(div).toHaveClass('is-findMatch');
     });
 
     it('returns div with .is-focalNode if vertex is a focalNode', () => {
-      const wrapper = shallow(getNodeRenderers(new Set(), new Map()).htmlEmphasis(focalLv));
-      expect(wrapper.hasClass('is-focalNode')).toBe(true);
-      expect(wrapper.type()).toBe('div');
+      const { container } = render(getNodeRenderers(new Set(), new Map()).htmlEmphasis(focalLv));
+      const div = container.querySelector('div');
+      expect(div).toBeInTheDocument();
+      expect(div).toHaveClass('DdgNode--HtmlEmphasis');
+      expect(div).toHaveClass('is-focalNode');
     });
 
     it('returns div with .is-findMatch and .is-focalNode if vertex is a focalNode and a findMatch', () => {
-      const wrapper = shallow(
+      const { container } = render(
         getNodeRenderers(new Set([focalLv.vertex.key]), new Map()).htmlEmphasis(focalLv)
       );
-      expect(wrapper.hasClass('is-findMatch')).toBe(true);
-      expect(wrapper.hasClass('is-focalNode')).toBe(true);
-      expect(wrapper.type()).toBe('div');
+      const div = container.querySelector('div');
+      expect(div).toBeInTheDocument();
+      expect(div).toHaveClass('DdgNode--HtmlEmphasis');
+      expect(div).toHaveClass('is-findMatch');
+      expect(div).toHaveClass('is-focalNode');
     });
   });
 
@@ -87,15 +107,24 @@ describe('getNodeRenderers', () => {
     });
 
     it('returns null if provided vertex is not in set', () => {
-      expect(
-        getNodeRenderers(new Set([{ vertex: { key: `not-${key}` } }]), new Map()).vectorFindColorBand(lv)
-      ).toBe(null);
+      const findMatches = new Set([`not-${key}`]);
+      expect(getNodeRenderers(findMatches, new Map()).vectorFindColorBand(lv)).toBe(null);
     });
 
     it('returns circle with correct size and className', () => {
-      expect(
-        shallow(getNodeRenderers(new Set([lv.vertex.key]), new Map()).vectorFindColorBand(lv))
-      ).toMatchSnapshot();
+      const { container } = render(
+        getNodeRenderers(new Set([lv.vertex.key]), new Map()).vectorFindColorBand(lv)
+      );
+      const circle = container.querySelector('circle');
+      expect(circle).toBeInTheDocument();
+
+      // Verify specific className and SVG attributes ---
+      expect(circle).toHaveClass('DdgNode--VectorFindEmphasis--colorBand');
+      // r = width / 2 - 1 => 100 / 2 - 1 = 49
+      // cx, cy = width / 2 => 100 / 2 = 50
+      expect(circle).toHaveAttribute('r', '49');
+      expect(circle).toHaveAttribute('cx', '50');
+      expect(circle).toHaveAttribute('cy', '50');
     });
   });
 });

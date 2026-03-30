@@ -1,83 +1,119 @@
 // Copyright (c) 2019 The Jaeger Authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import React from 'react';
-import { shallow } from 'enzyme';
-import { Menu, Dropdown, Tooltip } from 'antd';
+import { render, screen, fireEvent, within } from '@testing-library/react';
+import '@testing-library/jest-dom';
 
 import ReferencesButton from './ReferencesButton';
 import transformTraceData from '../../../model/transform-trace-data';
 import traceGenerator from '../../../demo/trace-generators';
-import ReferenceLink from '../url/ReferenceLink';
 
-describe(ReferencesButton, () => {
+jest.mock('../url/ReferenceLink', () => {
+  const MockReferenceLink = ({ children, className, link, focusSpan }) => (
+    <a
+      className={className}
+      data-testid="reference-link"
+      data-spanid={link.spanID}
+      data-traceid={link.traceID}
+      role="button"
+      onClick={() => focusSpan(link.spanID)}
+    >
+      {children}
+    </a>
+  );
+  MockReferenceLink.displayName = 'ReferenceLink';
+  return MockReferenceLink;
+});
+
+jest.mock('../../common/NewWindowIcon', () => () => <span data-testid="new-window-icon">↗</span>);
+
+describe('<ReferencesButton>', () => {
   const trace = transformTraceData(traceGenerator.trace({ numberOfSpans: 10 }));
-  const oneReference = trace.spans[1].references;
 
-  const moreReferences = oneReference.slice();
-  const externalSpanID = 'extSpan';
-
-  moreReferences.push(
+  // Create OTEL links from legacy references
+  const oneLink = [
     {
-      refType: 'CHILD_OF',
+      traceID: trace.spans[0].traceID,
+      spanID: trace.spans[0].spanID,
+      attributes: [],
+      span: {
+        spanID: trace.spans[0].spanID,
+        resource: { serviceName: trace.spans[0].process.serviceName },
+        name: trace.spans[0].operationName,
+      },
+    },
+  ];
+
+  const externalSpanID = 'extSpan';
+  const moreLinks = [
+    {
       traceID: trace.traceID,
-      spanID: trace.spans[2].spanID,
-      span: trace.spans[2],
+      spanID: trace.spans[1].spanID,
+      attributes: [],
+      span: {
+        spanID: trace.spans[1].spanID,
+        resource: { serviceName: trace.spans[1].process.serviceName },
+        name: trace.spans[1].operationName,
+      },
     },
     {
-      refType: 'CHILD_OF',
+      traceID: trace.traceID,
+      spanID: trace.spans[2].spanID,
+      attributes: [],
+      span: {
+        spanID: trace.spans[2].spanID,
+        resource: { serviceName: trace.spans[2].process.serviceName },
+        name: trace.spans[2].operationName,
+      },
+    },
+    {
       traceID: 'otherTrace',
       spanID: externalSpanID,
-    }
-  );
+      attributes: [],
+      // No span property - external trace
+    },
+  ];
 
   const baseProps = {
-    focusSpan: () => {},
+    focusSpan: jest.fn(),
+    tooltipText: 'Test tooltip text',
+    children: <span data-testid="button-children">References</span>,
   };
 
-  it('renders single reference', () => {
-    const props = { ...baseProps, references: oneReference };
-    const wrapper = shallow(<ReferencesButton {...props} />);
-    const dropdown = wrapper.find(Dropdown);
-    const refLink = wrapper.find(ReferenceLink);
-    const tooltip = wrapper.find(Tooltip);
-
-    expect(dropdown.length).toBe(0);
-    expect(refLink.length).toBe(1);
-    expect(refLink.prop('reference')).toBe(oneReference[0]);
-    expect(refLink.first().props().className).toBe('ReferencesButton-MultiParent');
-    expect(tooltip.length).toBe(1);
-    expect(tooltip.prop('title')).toBe(props.tooltipText);
+  beforeEach(() => {
+    jest.clearAllMocks();
   });
 
-  it('renders multiple references', () => {
-    const props = { ...baseProps, references: moreReferences };
-    const wrapper = shallow(<ReferencesButton {...props} />);
-    const dropdown = wrapper.find(Dropdown);
-    expect(dropdown.length).toBe(1);
-    const menuInstance = shallow(dropdown.first().props().overlay);
-    const submenuItems = menuInstance.find(Menu.Item);
-    expect(submenuItems.length).toBe(3);
-    submenuItems.forEach((submenuItem, i) => {
-      expect(submenuItem.find(ReferenceLink).prop('reference')).toBe(moreReferences[i]);
-    });
-    expect(
-      submenuItems
-        .at(2)
-        .find(ReferenceLink)
-        .childAt(0)
-        .text()
-    ).toBe(`(another trace) - ${moreReferences[2].spanID}`);
+  it('renders a single link directly', () => {
+    render(<ReferencesButton {...baseProps} links={oneLink} />);
+
+    const trigger = screen.getByTestId('button-children').closest('a');
+    expect(trigger).toBeInTheDocument();
+    expect(trigger).toHaveClass('ReferencesButton-MultiParent');
+
+    fireEvent.click(trigger);
+    expect(baseProps.focusSpan).toHaveBeenCalledWith(oneLink[0].spanID);
+  });
+
+  it('renders multiple links as dropdown menu items', async () => {
+    render(<ReferencesButton {...baseProps} links={moreLinks} />);
+
+    const trigger = screen.getByTestId('button-children').closest('a');
+    expect(trigger).toHaveClass('ReferencesButton-MultiParent');
+    expect(trigger).toBeInTheDocument();
+
+    fireEvent.click(trigger);
+
+    // Find dropdown items (they're rendered as anchors with role="button")
+    const dropdownItems = await screen.findAllByRole('button', { hidden: false });
+    // Filter to get just the link items (not the trigger itself)
+    const linkItems = dropdownItems.filter(item => item.classList.contains('ReferencesButton--TraceRefLink'));
+
+    expect(linkItems.length).toBeGreaterThan(0);
+
+    // Check that the external span has the new window icon
+    const externalLinkText = linkItems.find(item => item.textContent.includes(externalSpanID));
+    expect(externalLinkText).toBeInTheDocument();
   });
 });

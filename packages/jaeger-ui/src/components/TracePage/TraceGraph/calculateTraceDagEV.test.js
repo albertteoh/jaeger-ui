@@ -1,21 +1,10 @@
 // Copyright (c) 2019 The Jaeger Authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import transformTraceData from '../../../model/transform-trace-data';
-import calculateTraceDagEV from './calculateTraceDagEV';
-
-const testTrace = require('./testTrace.json');
+import { SpanKind } from '../../../types/otel';
+import calculateTraceDagEV, { mapNonBlocking } from './calculateTraceDagEV';
+import testTrace from './testTrace.json';
 
 const transformedTrace = transformTraceData(testTrace);
 
@@ -31,7 +20,7 @@ function assertData(nodes, service, operation, count, errors, time, percent, sel
 
 describe('calculateTraceDagEV', () => {
   it('calculates TraceGraph', () => {
-    const traceDag = calculateTraceDagEV(transformedTrace);
+    const traceDag = calculateTraceDagEV(transformedTrace.asOtelTrace());
     const { vertices: nodes } = traceDag;
     expect(nodes.length).toBe(9);
     assertData(nodes, 'service1', 'op1', 1, 0, 390, 39, 224);
@@ -47,5 +36,93 @@ describe('calculateTraceDagEV', () => {
     // fork-join self-times are calculated correctly (self-time drange)
     assertData(nodes, 'service1', 'op6', 1, 0, 10, 1, 1);
     assertData(nodes, 'service1', 'op7', 2, 0, 17, 1.7, 17);
+  });
+});
+
+describe('mapNonBlocking', () => {
+  it('sets isNonBlocking false for blocking spans (CLIENT, SERVER, INTERNAL)', () => {
+    const mockEdges = [{ from: 0, to: 0 }];
+    const mockNodes = [
+      {
+        members: [
+          {
+            span: {
+              kind: SpanKind.CLIENT, // Blocking span
+            },
+          },
+        ],
+      },
+    ];
+
+    const result = mapNonBlocking(mockEdges, mockNodes);
+    expect(result[0].isNonBlocking).toBe(false);
+  });
+
+  it('sets isNonBlocking true for non-blocking CONSUMER spans', () => {
+    const mockEdges = [{ from: 0, to: 0 }];
+    const mockNodes = [
+      {
+        members: [
+          {
+            span: {
+              kind: SpanKind.CONSUMER, // Non-blocking span (PRODUCER-CONSUMER pair)
+            },
+          },
+        ],
+      },
+    ];
+
+    const result = mapNonBlocking(mockEdges, mockNodes);
+    expect(result[0].isNonBlocking).toBe(true);
+  });
+});
+
+describe('mapNonBlocking - span kind combinations', () => {
+  const testCases = [
+    {
+      name: 'CLIENT span (blocking)',
+      kind: SpanKind.CLIENT,
+      expected: false,
+    },
+    {
+      name: 'SERVER span (blocking)',
+      kind: SpanKind.SERVER,
+      expected: false,
+    },
+    {
+      name: 'INTERNAL span (blocking)',
+      kind: SpanKind.INTERNAL,
+      expected: false,
+    },
+    {
+      name: 'PRODUCER span (blocking)',
+      kind: SpanKind.PRODUCER,
+      expected: false,
+    },
+    {
+      name: 'CONSUMER span (non-blocking)',
+      kind: SpanKind.CONSUMER,
+      expected: true,
+    },
+  ];
+
+  testCases.forEach(({ name, kind, expected }) => {
+    it(`sets isNonBlocking correctly for ${name}`, () => {
+      const mockEdges = [{ from: 0, to: 0 }];
+      const mockNodes = [
+        {
+          members: [
+            {
+              span: {
+                kind,
+              },
+            },
+          ],
+        },
+      ];
+
+      const result = mapNonBlocking(mockEdges, mockNodes);
+      expect(result[0].isNonBlocking).toBe(expected);
+    });
   });
 });

@@ -1,24 +1,15 @@
 // Copyright (c) 2019 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import * as React from 'react';
+import { useNavigate } from 'react-router-dom';
+import type { Location } from 'react-router-dom';
 import _get from 'lodash/get';
 import memoizeOne from 'memoize-one';
 import queryString from 'query-string';
 import { connect } from 'react-redux';
 
-import { DeepDependencyGraphPageImpl, TOwnProps, TProps, TReduxProps } from '.';
+import { DeepDependencyGraphPageImpl, TReduxProps } from '.';
 import { getUrlState, sanitizeUrlState } from './url';
 import { ROUTE_PATH } from '../SearchTracePage/url';
 import GraphModel, { makeGraph } from '../../model/ddg/GraphModel';
@@ -28,10 +19,25 @@ import transformDdgData from '../../model/ddg/transformDdgData';
 import transformTracesToPaths from '../../model/ddg/transformTracesToPaths';
 
 import { TDdgStateEntry } from '../../types/TDdgState';
-import { ReduxState } from '../../types';
+import { FetchedTrace, ReduxState } from '../../types';
+import { Trace } from '../../types/trace';
+import { IOtelTrace } from '../../types/otel';
 
 // Required for proper memoization of subsequent function calls
 const svcOp = memoizeOne((service, operation) => ({ service, operation }));
+
+const mapTracesToOtel = memoizeOne(
+  (traces: Record<string, FetchedTrace<Trace>>): Record<string, FetchedTrace<IOtelTrace>> => {
+    const result: Record<string, FetchedTrace<IOtelTrace>> = {};
+    Object.entries(traces).forEach(([id, trace]) => {
+      result[id] = {
+        ...trace,
+        data: trace.data?.asOtelTrace(),
+      };
+    });
+    return result;
+  }
+);
 
 // export for tests
 export function mapStateToProps(state: ReduxState, ownProps: TOwnProps): TReduxProps {
@@ -41,7 +47,7 @@ export function mapStateToProps(state: ReduxState, ownProps: TOwnProps): TReduxP
   let graphState: TDdgStateEntry | undefined;
   let graph: GraphModel | undefined;
   if (service) {
-    const payload = transformTracesToPaths(state.trace.traces, service, operation);
+    const payload = transformTracesToPaths(mapTracesToOtel(state.trace.traces), service, operation);
     graphState = {
       model: transformDdgData(payload, svcOp(service, operation)),
       state: fetchedState.DONE,
@@ -59,22 +65,35 @@ export function mapStateToProps(state: ReduxState, ownProps: TOwnProps): TReduxP
   };
 }
 
+type TOwnProps = {
+  location: Location;
+};
+
+type TracesDdgImplProps = TOwnProps & TReduxProps;
+
 // export for tests
-export class TracesDdgImpl extends React.PureComponent<TProps & { showSvcOpsHeader: never; baseUrl: never }> {
-  render(): React.ReactNode {
-    const { location } = this.props;
-    const urlArgs = queryString.parse(location.search);
-    const { end, start, limit, lookback, maxDuration, minDuration, view } = urlArgs;
-    const extraArgs = { end, start, limit, lookback, maxDuration, minDuration, view };
-    return (
-      <DeepDependencyGraphPageImpl
-        baseUrl={ROUTE_PATH}
-        extraUrlArgs={extraArgs}
-        showSvcOpsHeader={false}
-        {...this.props}
-      />
-    );
-  }
-}
+export const TracesDdgImpl: React.FC<TracesDdgImplProps> = React.memo(props => {
+  const { location } = props;
+  const navigate = useNavigate();
+  const urlArgs = queryString.parse(location.search);
+  const { end, start, limit, lookback, maxDuration, minDuration, view } = urlArgs;
+  const extraArgs = { end, start, limit, lookback, maxDuration, minDuration, view };
+
+  return (
+    // Note: services and serverOps are intentionally empty arrays because this traces view
+    // sets showSvcOpsHeader=false, hiding the service/operation selector UI elements.
+    <DeepDependencyGraphPageImpl
+      baseUrl={ROUTE_PATH}
+      extraUrlArgs={extraArgs}
+      showSvcOpsHeader={false}
+      navigate={navigate}
+      services={[]}
+      serverOps={[]}
+      {...props}
+    />
+  );
+});
+
+TracesDdgImpl.displayName = 'TracesDdgImpl';
 
 export default connect(mapStateToProps)(TracesDdgImpl);

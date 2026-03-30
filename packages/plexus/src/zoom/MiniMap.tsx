@@ -1,35 +1,24 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import * as React from 'react';
 
-import resetZoomIcon from './resetZoomIcon';
+import { HiMiniArrowsPointingOut, HiMagnifyingGlassPlus, HiMagnifyingGlassMinus } from 'react-icons/hi2';
 
-/* eslint-disable react/no-unused-prop-types */
 type TProps = {
   classNamePrefix?: string | void;
   className?: string | void;
   contentHeight: number;
   contentWidth: number;
   viewAll: () => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
   viewportHeight: number;
   viewportWidth: number;
   k?: number;
   x?: number;
   y?: number;
 };
-/* eslint-enable react/no-unused-prop-types */
 
 const LENGTH_TARGET_PX = 80;
 
@@ -67,11 +56,10 @@ function getViewTransform(props: TProps, displaySize: { width: number; height: n
   };
 }
 
-function getClassNames(props: TProps) {
-  const { className, classNamePrefix } = props;
-  const base = `${classNamePrefix || 'plexus'}-MiniMap`;
+function getClassNames(className: string, classNamePrefix: string) {
+  const base = `${classNamePrefix}-MiniMap`;
   return {
-    root: `${base} ${className || ''}`,
+    root: `${base} ${className}`,
     item: `${base}--item`,
     map: `${base}--map`,
     mapActive: `${base}--mapActive`,
@@ -79,8 +67,8 @@ function getClassNames(props: TProps) {
   };
 }
 
-export function MiniMap(props: TProps) {
-  const css = getClassNames(props);
+export function MiniMap({ className = '', classNamePrefix = 'plexus', ...props }: TProps) {
+  const css = getClassNames(className, classNamePrefix);
   const mapSize = getMapSize(props);
   const activeXform = getViewTransform(props, mapSize);
   return (
@@ -88,16 +76,17 @@ export function MiniMap(props: TProps) {
       <div className={`${css.item} ${css.map}`} style={mapSize}>
         <div className={css.mapActive} style={{ ...activeXform, ...mapSize }} />
       </div>
+      <div className={`${css.item} ${css.button}`} onClick={props.zoomIn} role="button">
+        <HiMagnifyingGlassPlus />
+      </div>
+      <div className={`${css.item} ${css.button}`} onClick={props.zoomOut} role="button">
+        <HiMagnifyingGlassMinus />
+      </div>
       <div className={`${css.item} ${css.button}`} onClick={props.viewAll} role="button">
-        {resetZoomIcon}
+        <HiMiniArrowsPointingOut />
       </div>
     </div>
   );
 }
-
-MiniMap.defaultProps = {
-  className: '',
-  classNamePrefix: 'plexus',
-};
 
 export default React.memo(MiniMap);

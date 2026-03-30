@@ -1,19 +1,8 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import * as React from 'react';
-import { Button, Modal, Table } from 'antd';
+import { Modal, Table } from 'antd';
 
 import keyboardMappings from '../keyboard-mappings';
 import track from './KeyboardShortcutsHelp.track';
@@ -21,11 +10,14 @@ import track from './KeyboardShortcutsHelp.track';
 import './KeyboardShortcutsHelp.css';
 
 type Props = {
-  className: string;
+  open: boolean;
+  onClose: () => void;
 };
 
-type State = {
-  visible: boolean;
+type DataRecord = {
+  key: string;
+  kbds: React.JSX.Element;
+  description: string;
 };
 
 const { Column } = Table;
@@ -47,7 +39,7 @@ function convertKeys(keyConfig: string | string[]): string[][] {
 
 const padLeft = (text: string) => <span className="ub-pl4">{text}</span>;
 const padRight = (text: string) => <span className="ub-pr4">{text}</span>;
-const getRowClass = (_: any, index: number) => (index % 2 > 0 ? ODD_ROW_CLASS : '');
+const getRowClass = (_: DataRecord, index: number) => (index % 2 > 0 ? ODD_ROW_CLASS : '');
 
 let kbdTable: React.ReactNode | null = null;
 
@@ -55,7 +47,7 @@ function getHelpModal() {
   if (kbdTable) {
     return kbdTable;
   }
-  const data: { key: string; kbds: any; description: string }[] = [];
+  const data: DataRecord[] = [];
   Object.keys(keyboardMappings).forEach(handle => {
     const { binding, label } = keyboardMappings[handle];
     const keyConfigs = convertKeys(binding);
@@ -84,37 +76,27 @@ function getHelpModal() {
   return kbdTable;
 }
 
-export default class KeyboardShortcutsHelp extends React.PureComponent<Props, State> {
-  state = {
-    visible: false,
-  };
+export default function KeyboardShortcutsHelp({ open, onClose }: Props) {
+  React.useEffect(() => {
+    if (open) {
+      track();
+    }
+  }, [open]);
 
-  onCtaClicked = () => {
-    track();
-    this.setState({ visible: true });
-  };
-
-  onCloserClicked = () => this.setState({ visible: false });
-
-  render() {
-    const { className } = this.props;
-    return (
-      <React.Fragment>
-        <Button className={className} htmlType="button" onClick={this.onCtaClicked}>
-          <span className="KeyboardShortcutsHelp--cta">⌘</span>
-        </Button>
-        <Modal
-          align={undefined}
-          title="Keyboard Shortcuts"
-          visible={this.state.visible}
-          onOk={this.onCloserClicked}
-          onCancel={this.onCloserClicked}
-          cancelButtonProps={{ style: { display: 'none' } }}
-          bodyStyle={{ padding: 0 }}
-        >
-          {getHelpModal()}
-        </Modal>
-      </React.Fragment>
-    );
-  }
+  return (
+    <Modal
+      title="Keyboard Shortcuts"
+      open={open}
+      onOk={onClose}
+      onCancel={onClose}
+      cancelButtonProps={{ style: { display: 'none' } }}
+      styles={{
+        body: {
+          padding: 0,
+        },
+      }}
+    >
+      {getHelpModal()}
+    </Modal>
+  );
 }

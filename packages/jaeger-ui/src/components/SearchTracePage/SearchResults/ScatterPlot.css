@@ -1,28 +1,33 @@
 /*
 Copyright (c) 2017 Uber Technologies, Inc.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: Apache-2.0
 */
 
-.TraceResultsScatterPlot .rv-xy-plot__series.rv-xy-plot__series--mark {
-  cursor: pointer;
-}
-
 .scatter-plot-hint {
-  color: #444;
-  background: #f8f8f8;
-  border: 1px solid #ddd;
+  color: var(--text-primary);
+  background: var(--surface-tertiary);
+  border: 1px solid var(--border-default);
   border-radius: 3px;
   padding: 0.5em;
   margin: 0.5em;
+  min-width: 200px;
+}
+
+.scatter-plot-hint h4 {
+  margin: 0 0 0.5em 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.scatter-plot-hint-stats {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.scatter-plot-hint-stats div {
+  margin-bottom: 0.25em;
+}
+
+.scatter-plot-hint-stats div:last-child {
+  margin-bottom: 0;
 }

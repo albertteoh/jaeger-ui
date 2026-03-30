@@ -1,25 +1,51 @@
 // Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
+
+// Mutable object so individual tests can control the location without re-creating the mock.
+const mockLocation = { search: '' };
+
+jest.mock('react-router-dom', () => ({
+  ...jest.requireActual('react-router-dom'),
+  useLocation: () => mockLocation,
+}));
+
+jest.mock('../../../model/path-agnostic-decorations', () => ({
+  __esModule: true,
+  default: jest.fn(() => ({})),
+}));
 
 import React from 'react';
-import { shallow } from 'enzyme';
+import { render, screen, fireEvent } from '@testing-library/react';
+import '@testing-library/jest-dom';
 import _set from 'lodash/set';
+import { Provider } from 'react-redux';
 
+import extractDecorationFromState from '../../../model/path-agnostic-decorations';
 import stringSupplant from '../../../utils/stringSupplant';
 import JaegerAPI from '../../../api/jaeger';
-import VerticalResizer from '../../common/VerticalResizer';
 import { UnconnectedDetailsPanel as DetailsPanel } from './DetailsPanel';
+import DefaultDetailsPanel from './DetailsPanel';
+
+jest.mock('../../common/VerticalResizer', () => {
+  return ({ onChange, position }) => (
+    <button
+      type="button"
+      data-testid="vertical-resizer"
+      data-position={position}
+      onClick={() => onChange(0.6)}
+    >
+      Mock Resizer
+    </button>
+  );
+});
+
+jest.mock('../../common/DetailsCard', () => {
+  return ({ className, details }) => (
+    <div data-testid="details-card" className={className}>
+      {typeof details === 'string' ? details : JSON.stringify(details)}
+    </div>
+  );
+});
 
 describe('<SidePanel>', () => {
   const service = 'test svc';
@@ -57,163 +83,100 @@ describe('<SidePanel>', () => {
 
   beforeEach(() => {
     fetchDecorationSpy.mockClear();
+    jest.clearAllMocks();
   });
 
   describe('fetchDetails', () => {
-    it('fetches correct details url, perferring op-scoped details, or does not fetch at all', async () => {
-      const details = 'test details';
-      const columnDefs = ['test', 'column', 'defs'];
+    it('fetches correct details url, perferring op-scoped details, or does not fetch at all', () => {
+      const component1 = render(<DetailsPanel {...props} operation={opString} />);
+      expect(fetchDecorationSpy).toHaveBeenCalledWith(supplantedOpUrl);
+      component1.unmount();
+      fetchDecorationSpy.mockClear();
 
-      const tests = [];
+      const component2 = render(<DetailsPanel {...props} />);
+      expect(fetchDecorationSpy).toHaveBeenCalledWith(supplantedUrl);
+      component2.unmount();
+      fetchDecorationSpy.mockClear();
 
-      ['detailUrl#{service}', undefined].forEach(detailUrl => {
-        ['detail.path.#{service}', undefined].forEach(detailPath => {
-          ['detail.column.def.path.#{service}', undefined].forEach(detailColumnDefPath => {
-            ['opDetailUrl#{service}#{operation}', undefined].forEach(opDetailUrl => {
-              ['op.detail.path.#{service}.#{operation}', undefined].forEach(opDetailPath => {
-                ['op.detail.column.def.path.#{service}', undefined].forEach(opDetailColumnDefPath => {
-                  ['op', ['op0', 'op1'], undefined].forEach(operation => {
-                    [{ message: 'Err obj with message' }, 'error message', false].forEach(error => {
-                      [true, false].forEach(hasDetails => {
-                        [true, false].forEach(hasColumnDefPath => {
-                          tests.push(async () => {
-                            fetchDecorationSpy.mockClear();
-                            const detailsPanel = new DetailsPanel({
-                              operation,
-                              service,
-                              decorationSchema: {
-                                detailUrl,
-                                detailPath,
-                                detailColumnDefPath,
-                                opDetailUrl,
-                                opDetailPath,
-                                opDetailColumnDefPath,
-                              },
-                            });
-
-                            const setStateSpy = jest.spyOn(detailsPanel, 'setState').mockImplementation();
-                            detailsPanel.fetchDetails();
-
-                            let supplantedFetchUrl;
-                            let supplantedColumnDefPath;
-                            let supplantedDetailsPath;
-
-                            if (
-                              typeof opDetailUrl === 'string' &&
-                              typeof opDetailPath === 'string' &&
-                              typeof operation === 'string'
-                            ) {
-                              supplantedFetchUrl = stringSupplant(opDetailUrl, { service, operation });
-                              supplantedDetailsPath = stringSupplant(opDetailPath, { service, operation });
-                              if (opDetailColumnDefPath)
-                                supplantedColumnDefPath = stringSupplant(opDetailColumnDefPath, {
-                                  service,
-                                  operation,
-                                });
-                            } else if (typeof detailUrl === 'string' && typeof detailPath === 'string') {
-                              supplantedFetchUrl = stringSupplant(detailUrl, { service });
-                              supplantedDetailsPath = stringSupplant(detailPath, { service });
-                              if (detailColumnDefPath)
-                                supplantedColumnDefPath = stringSupplant(detailColumnDefPath, { service });
-                            } else {
-                              expect(fetchDecorationSpy).not.toHaveBeenCalled();
-                              return;
-                            }
-
-                            expect(fetchDecorationSpy).toHaveBeenLastCalledWith(supplantedFetchUrl);
-                            expect(setStateSpy).toHaveBeenLastCalledWith({ detailsLoading: true });
-
-                            const expectedSetStateArg = {
-                              detailsLoading: false,
-                              detailsErred: Boolean(error || !hasDetails),
-                            };
-
-                            if (!error) {
-                              const result = {};
-
-                              if (hasDetails) {
-                                _set(result, supplantedDetailsPath, details);
-                                expectedSetStateArg.details = details;
-                              } else {
-                                expectedSetStateArg.details = `\`${supplantedDetailsPath}\` not found in response`;
-                              }
-
-                              if (hasColumnDefPath && supplantedColumnDefPath) {
-                                _set(result, supplantedColumnDefPath, columnDefs);
-                                expectedSetStateArg.columnDefs = columnDefs;
-                              } else {
-                                expectedSetStateArg.columnDefs = [];
-                              }
-
-                              res(result);
-                              await promise;
-                              expect(setStateSpy).toHaveBeenLastCalledWith(expectedSetStateArg);
-                            } else {
-                              const errorMessage = error.message || error;
-                              expectedSetStateArg.details = `Unable to fetch decoration: ${errorMessage}`;
-                              rej(error);
-                              await promise.catch(() => {});
-                              expect(setStateSpy).toHaveBeenLastCalledWith(expectedSetStateArg);
-                            }
-                          });
-                        });
-                      });
-                    });
-                  });
-                });
-              });
-            });
-          });
-        });
-      });
-
-      const errors = [];
-      await Promise.all(tests.map(test => test().catch(err => errors.push(err))));
-      if (errors.length) throw errors;
+      const component3 = render(
+        <DetailsPanel
+          service={service}
+          decorationSchema={{
+            name: 'Test without URLs',
+          }}
+        />
+      );
+      expect(fetchDecorationSpy).not.toHaveBeenCalled();
+      component3.unmount();
     });
   });
 
   describe('render', () => {
     it('renders', () => {
-      const wrapper = shallow(<DetailsPanel {...props} />);
-      wrapper.setState({ detailsLoading: false });
-      expect(wrapper).toMatchSnapshot();
+      const { container } = render(<DetailsPanel {...props} />);
+
+      expect(container.textContent).toContain(service);
+
+      expect(container.textContent).toContain(`Decorating ${service}`);
+
+      expect(container.textContent).toContain(props.decorationValue);
     });
 
     it('renders with operation', () => {
-      const wrapper = shallow(<DetailsPanel {...props} operation={opString} />);
-      wrapper.setState({ detailsLoading: false });
-      expect(wrapper).toMatchSnapshot();
+      const { container } = render(<DetailsPanel {...props} operation={opString} />);
+
+      expect(container.textContent).toContain(service);
+      expect(container.textContent).toContain(opString);
     });
 
     it('renders omitted array of operations', () => {
-      const wrapper = shallow(<DetailsPanel {...props} operation={['op0', 'op1']} />);
-      wrapper.setState({ detailsLoading: false });
-      expect(wrapper).toMatchSnapshot();
+      const { container } = render(<DetailsPanel {...props} operation={['op0', 'op1']} />);
+
+      expect(container.textContent).toContain(service);
+
+      expect(container.textContent).not.toContain('op0');
+      expect(container.textContent).not.toContain('op1');
     });
 
     it('renders with progressbar', () => {
-      const progressbar = <div>stand-in progressbar</div>;
-      const wrapper = shallow(<DetailsPanel {...props} decorationProgressbar={progressbar} />);
-      wrapper.setState({ detailsLoading: false });
-      expect(wrapper).toMatchSnapshot();
+      const progressbarText = 'stand-in progressbar';
+      const progressbar = <div data-testid="test-progressbar">{progressbarText}</div>;
+      const { container } = render(<DetailsPanel {...props} decorationProgressbar={progressbar} />);
+
+      expect(screen.getByTestId('test-progressbar')).toBeInTheDocument();
+      expect(screen.getByText(progressbarText)).toBeInTheDocument();
+
+      expect(container.textContent).not.toContain(props.decorationValue);
     });
 
     it('renders while loading', () => {
-      const wrapper = shallow(<DetailsPanel {...props} />);
-      expect(wrapper).toMatchSnapshot();
+      const { container } = render(<DetailsPanel {...props} />);
+      expect(container.querySelector('.Ddg--DetailsPanel--LoadingWrapper')).toBeInTheDocument();
     });
 
-    it('renders details', () => {
-      const wrapper = shallow(<DetailsPanel {...props} />);
-      wrapper.setState({ detailsLoading: false, details: 'details string' });
-      expect(wrapper).toMatchSnapshot();
+    it('renders details', async () => {
+      render(<DetailsPanel {...props} />);
+
+      const detailsData = 'details string';
+      const response = {};
+      _set(response, props.decorationSchema.detailPath, detailsData);
+
+      res(response);
+
+      const detailsCard = await screen.findByTestId('details-card');
+      expect(detailsCard).toBeInTheDocument();
+      expect(detailsCard.textContent).toBe(detailsData);
     });
 
-    it('renders details error', () => {
-      const wrapper = shallow(<DetailsPanel {...props} />);
-      wrapper.setState({ detailsLoading: false, details: 'details error', detailsErred: true });
-      expect(wrapper).toMatchSnapshot();
+    it('renders details error', async () => {
+      render(<DetailsPanel {...props} />);
+
+      rej(new Error('fetch error'));
+
+      const detailsCard = await screen.findByTestId('details-card');
+      expect(detailsCard).toBeInTheDocument();
+      expect(detailsCard).toHaveClass('is-error');
+      expect(detailsCard.textContent).toContain('Unable to fetch decoration: fetch error');
     });
 
     it('renders detailLink', () => {
@@ -221,8 +184,27 @@ describe('<SidePanel>', () => {
         ...props.decorationSchema,
         detailLink: 'test details link',
       };
-      const wrapper = shallow(<DetailsPanel {...props} decorationSchema={schemaWithLink} />);
-      expect(wrapper).toMatchSnapshot();
+      render(<DetailsPanel {...props} decorationSchema={schemaWithLink} />);
+
+      const link = screen.getByRole('link');
+      expect(link).toHaveAttribute('href', schemaWithLink.detailLink);
+      expect(link).toHaveAttribute('target', '_blank');
+      expect(link).toHaveAttribute('rel', 'noreferrer noopener');
+    });
+
+    it('renders details path not found error', async () => {
+      render(<DetailsPanel {...props} />);
+
+      const response = { someOtherData: 'value' };
+
+      res(response);
+
+      const detailsCard = await screen.findByTestId('details-card');
+      expect(detailsCard).toBeInTheDocument();
+      expect(detailsCard).toHaveClass('is-error');
+      expect(detailsCard.textContent).toContain(
+        `\`${props.decorationSchema.detailPath}\` not found in response`
+      );
     });
   });
 
@@ -230,74 +212,111 @@ describe('<SidePanel>', () => {
     it('fetches details', () => {
       expect(fetchDecorationSpy).not.toHaveBeenCalled();
 
-      shallow(<DetailsPanel {...props} />);
+      render(<DetailsPanel {...props} />);
       expect(fetchDecorationSpy).toHaveBeenCalled();
       expect(fetchDecorationSpy).toHaveBeenLastCalledWith(supplantedUrl);
     });
   });
 
   describe('componentDidUpdate', () => {
-    const expectedState = expect.objectContaining({
-      details: undefined,
-      detailsErred: false,
-      detailsLoading: true,
-    });
-    let wrapper;
-
-    beforeEach(() => {
-      wrapper = shallow(<DetailsPanel {...props} />);
-      wrapper.setState({
-        details: 'test details',
-        detailsErred: false,
-        detailsLoading: false,
-      });
+    it('fetches details and clears relevant state if decorationSchema changes', async () => {
+      const { rerender } = render(<DetailsPanel {...props} />);
       expect(fetchDecorationSpy).toHaveBeenCalledTimes(1);
-      expect(fetchDecorationSpy).toHaveBeenLastCalledWith(supplantedUrl);
-    });
 
-    it('fetches details and clears relevant state if decorationSchema changes', () => {
+      fetchDecorationSpy.mockClear();
+
       const detailUrl = 'http://new.schema.detailsUrl?service=#{service}';
       const newSchema = {
         ...props.decorationSchema,
         detailUrl,
       };
-      wrapper.setProps({ decorationSchema: newSchema });
-      expect(fetchDecorationSpy).toHaveBeenCalledTimes(2);
+
+      rerender(<DetailsPanel {...props} decorationSchema={newSchema} />);
+
+      expect(fetchDecorationSpy).toHaveBeenCalledTimes(1);
       expect(fetchDecorationSpy).toHaveBeenLastCalledWith(stringSupplant(detailUrl, { service }));
-      expect(wrapper.state()).toEqual(expectedState);
     });
 
     it('fetches details and clears relevant state if operation changes', () => {
-      wrapper.setProps({ operation: opString });
-      expect(fetchDecorationSpy).toHaveBeenCalledTimes(2);
+      const { rerender } = render(<DetailsPanel {...props} />);
+      expect(fetchDecorationSpy).toHaveBeenCalledTimes(1);
+
+      fetchDecorationSpy.mockClear();
+
+      rerender(<DetailsPanel {...props} operation={opString} />);
+
+      expect(fetchDecorationSpy).toHaveBeenCalledTimes(1);
       expect(fetchDecorationSpy).toHaveBeenLastCalledWith(supplantedOpUrl);
-      expect(wrapper.state()).toEqual(expectedState);
     });
 
     it('fetches details and clears relevant state if service changes', () => {
+      const { rerender } = render(<DetailsPanel {...props} />);
+      expect(fetchDecorationSpy).toHaveBeenCalledTimes(1);
+
+      fetchDecorationSpy.mockClear();
+
       const newService = 'different test service';
-      wrapper.setProps({ service: newService });
-      expect(fetchDecorationSpy).toHaveBeenCalledTimes(2);
+      rerender(<DetailsPanel {...props} service={newService} />);
+
+      expect(fetchDecorationSpy).toHaveBeenCalledTimes(1);
       expect(fetchDecorationSpy).toHaveBeenLastCalledWith(
         stringSupplant(props.decorationSchema.detailUrl, { service: newService })
       );
-      expect(wrapper.state()).toEqual(expectedState);
     });
 
     it('does nothing if decorationSchema, operation, and service are unchanged', () => {
-      wrapper.setProps({ decorationValue: `not_${props.decorationValue}` });
+      const { rerender } = render(<DetailsPanel {...props} />);
       expect(fetchDecorationSpy).toHaveBeenCalledTimes(1);
+
+      fetchDecorationSpy.mockClear();
+
+      rerender(<DetailsPanel {...props} decorationValue={`not_${props.decorationValue}`} />);
+
+      expect(fetchDecorationSpy).not.toHaveBeenCalled();
     });
   });
 
   describe('onResize', () => {
     it('updates state', () => {
-      const width = 60;
-      const wrapper = shallow(<DetailsPanel {...props} />);
-      expect(wrapper.state('width')).not.toBe(width);
+      const { container } = render(<DetailsPanel {...props} />);
 
-      wrapper.find(VerticalResizer).prop('onChange')(width);
-      expect(wrapper.state('width')).toBe(width);
+      const initialWidth = '30vw';
+      expect(container.querySelector('.Ddg--DetailsPanel')).toHaveStyle(`width: ${initialWidth}`);
+
+      const resizer = screen.getByTestId('vertical-resizer');
+      fireEvent.click(resizer);
+
+      expect(container.querySelector('.Ddg--DetailsPanel')).toHaveStyle('width: 60vw');
+    });
+  });
+
+  describe('DetailsPanelWithLocation (default export)', () => {
+    const store = {
+      getState: () => ({}),
+      dispatch: jest.fn(),
+      subscribe: jest.fn(() => jest.fn()),
+    };
+    const wrapperProps = {
+      decorationSchema: { name: 'Wrapper Test Schema' },
+      service: 'wrapper-test-svc',
+    };
+
+    beforeEach(() => {
+      extractDecorationFromState.mockClear();
+      extractDecorationFromState.mockReturnValue({});
+    });
+
+    it('injects search from useLocation() into the connected component', () => {
+      mockLocation.search = '?decoration=my-decoration-id';
+      render(
+        <Provider store={store}>
+          <DefaultDetailsPanel {...wrapperProps} />
+        </Provider>
+      );
+      expect(extractDecorationFromState).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ search: '?decoration=my-decoration-id' })
+      );
     });
   });
 });

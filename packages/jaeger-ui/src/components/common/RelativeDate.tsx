@@ -1,33 +1,23 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
-import moment from 'moment';
+import React from 'react';
+import dayjs from 'dayjs';
 
 import { formatRelativeDate } from '../../utils/date';
 
 type Props = {
   fullMonthName: boolean | undefined | null;
   includeTime: boolean | undefined | null;
-  value: number | Date | any;
+  value: number | Date;
 };
 
 // TODO typescript doesn't understand text or null as react nodes
 // https://github.com/Microsoft/TypeScript/issues/21699
-export default function RelativeDate(props: Props): any {
+export default function RelativeDate(props: Props): React.JSX.Element {
   const { value, includeTime, fullMonthName } = props;
-  const m = moment.isMoment(value) ? value : moment(value);
+  const m = dayjs.isDayjs(value) ? value : dayjs(value);
   const dateStr = formatRelativeDate(m, Boolean(fullMonthName));
   const timeStr = includeTime ? `, ${m.format('h:mm:ss a')}` : '';
-  return `${dateStr}${timeStr}`;
+  return <span>{`${dateStr}${timeStr}`}</span>;
 }

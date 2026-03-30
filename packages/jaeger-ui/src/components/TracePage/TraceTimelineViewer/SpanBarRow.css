@@ -1,21 +1,19 @@
 /*
 Copyright (c) 2017 Uber Technologies, Inc.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: Apache-2.0
 */
 
 .span-row.is-matching-filter {
-  background-color: #fffce4;
+  background-color: var(--trace-emphasis-highlight);
+}
+
+.span-row.is-selected .span-name-wrapper {
+  background-color: var(--interactive-primary-light);
+}
+
+.span-row.is-selected .span-view {
+  background-color: var(--interactive-primary-light);
+  outline: 1px solid var(--interactive-primary);
 }
 
 .span-name-column {
@@ -39,65 +37,55 @@ limitations under the License.
 }
 
 .span-name-wrapper {
-  background: #f8f8f8;
+  background: var(--surface-secondary);
   line-height: 27px;
   overflow: hidden;
   display: flex;
 }
 
 .span-name-wrapper.is-matching-filter {
-  background-color: #fffce4;
+  background-color: var(--trace-emphasis-highlight);
 }
 
 .span-name-wrapper:hover {
-  border-right: 1px solid #bbb;
+  border-right: 1px solid var(--border-default);
   float: left;
   min-width: calc(100% + 1px);
   overflow: visible;
 }
 
 .span-row:hover .span-name-wrapper {
-  background: #f8f8f8;
-  background: linear-gradient(90deg, #fafafa, #f8f8f8 75%, #eee);
+  background: var(--surface-secondary);
+  background: linear-gradient(
+    90deg,
+    var(--surface-tertiary),
+    var(--surface-secondary) 75%,
+    var(--surface-secondary)
+  );
 }
 
 .span-row.is-matching-filter:hover .span-name-wrapper {
-  background: linear-gradient(90deg, #fff5e1, #fff5e1 75%, #ffe6c9);
+  background: var(--trace-emphasis-highlight);
 }
 
 .span-row.is-expanded .span-name-wrapper {
-  background: #f0f0f0;
-  box-shadow: 0 1px 0 #ddd;
+  background: var(--surface-secondary);
+  box-shadow: 0 1px 0 var(--border-default);
 }
 
 .span-row.is-expanded .span-name-wrapper.is-matching-filter {
-  background: #fff3d7;
+  background: var(--trace-emphasis-highlight);
 }
 
 .span-name {
-  color: #000;
+  color: var(--text-primary);
   cursor: pointer;
   flex: 1 1 auto;
   outline: none;
   overflow: hidden;
-  padding-left: 4px;
   padding-right: 0.25em;
   position: relative;
   text-overflow: ellipsis;
-}
-
-.span-name::before {
-  content: ' ';
-  position: absolute;
-  top: 4px;
-  bottom: 4px;
-  left: 0;
-  border-left: 4px solid;
-  border-left-color: inherit;
-}
-
-.span-name.is-detail-expanded::before {
-  bottom: 0;
 }
 
 /* This is so the hit area of the span-name extends the rest of the width of the span-name column */
@@ -116,11 +104,11 @@ limitations under the License.
 }
 
 .endpoint-name {
-  color: #808080;
+  color: var(--text-secondary);
 }
 
 .span-name:hover > .endpoint-name {
-  color: #000;
+  color: var(--text-primary);
 }
 
 .span-svc-name {
@@ -138,31 +126,43 @@ limitations under the License.
 }
 
 .span-row:hover .span-view {
-  background-color: #f5f5f5;
-  outline: 1px solid #ddd;
+  background-color: var(--surface-secondary);
+  outline: 1px solid var(--border-default);
 }
 
 .span-row.is-matching-filter:hover .span-view {
-  background-color: #fff3d7;
-  outline: 1px solid #ddd;
+  background-color: var(--trace-emphasis-highlight);
+  outline: 1px solid var(--border-default);
 }
 
 .span-row.is-expanded .span-view {
-  background: #f8f8f8;
-  outline: 1px solid #ddd;
+  background: var(--surface-secondary);
+  outline: 1px solid var(--border-default);
 }
 
 .span-row.is-expanded.is-matching-filter .span-view {
-  background: #fff3d7;
-  outline: 1px solid #ddd;
+  background: var(--trace-emphasis-highlight);
+  outline: 1px solid var(--border-default);
 }
 
 .span-row.is-expanded:hover .span-view {
-  background: #eee;
+  background: var(--surface-secondary);
 }
 
 .span-row.is-expanded.is-matching-filter:hover .span-view {
-  background: #ffeccf;
+  background: var(--trace-emphasis-highlight);
+}
+
+/* Keep selection highlight when the row is also hovered or expanded. */
+.span-row.is-selected:hover .span-name-wrapper,
+.span-row.is-selected.is-expanded .span-name-wrapper {
+  background-color: var(--interactive-primary-light);
+}
+
+.span-row.is-selected:hover .span-view,
+.span-row.is-selected.is-expanded .span-view {
+  background-color: var(--interactive-primary-light);
+  outline: 1px solid var(--interactive-primary);
 }
 
 .span-row.clipping-right .span-view::before {
@@ -176,12 +176,22 @@ limitations under the License.
 }
 
 .SpanBarRow--errorIcon {
-  background: #db2828;
+  background: var(--feedback-error);
   border-radius: 6.5px;
-  color: #fff;
+  color: var(--text-inverse);
   font-size: 0.85em;
   margin-right: 0.25rem;
   padding: 1px;
+}
+
+/* Hollow variant for bubbled errors from collapsed children */
+.SpanBarRow--errorIcon--hollow {
+  background: transparent;
+  border: 1.5px solid var(--feedback-error);
+  color: var(--feedback-error);
+  font-weight: bold;
+  padding: 0px;
+  /* Adjust padding since border adds 1.5px */
 }
 
 .SpanBarRow--rpcColorMarker {
@@ -192,5 +202,9 @@ limitations under the License.
   margin-right: 0.25rem;
   padding: 1px;
   width: 1em;
+  vertical-align: middle;
+}
+
+.SpanBarRow--arrowForwardIcon {
   vertical-align: middle;
 }

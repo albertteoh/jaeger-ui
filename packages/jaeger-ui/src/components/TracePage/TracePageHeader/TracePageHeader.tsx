@@ -1,76 +1,71 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import * as React from 'react';
-import { Button, Input } from 'antd';
+import { Button, InputRef, Tooltip } from 'antd';
 import _get from 'lodash/get';
 import _maxBy from 'lodash/maxBy';
-import _values from 'lodash/values';
-import IoAndroidArrowBack from 'react-icons/lib/io/android-arrow-back';
-import IoIosFilingOutline from 'react-icons/lib/io/ios-filing-outline';
-import MdKeyboardArrowRight from 'react-icons/lib/md/keyboard-arrow-right';
+import { IoArrowBack, IoFileTrayFull, IoChevronForward, IoWarning } from 'react-icons/io5';
 import { Link } from 'react-router-dom';
 
+import DocumentTitle from '../../../utils/documentTitle';
 import AltViewOptions from './AltViewOptions';
-import KeyboardShortcutsHelp from './KeyboardShortcutsHelp';
 import SpanGraph from './SpanGraph';
+import TraceViewSettings from './TraceViewSettings';
 import TracePageSearchBar from './TracePageSearchBar';
 import { TUpdateViewRangeTimeFunction, IViewRange, ViewRangeTimeUpdate, ETraceViewType } from '../types';
 import LabeledList from '../../common/LabeledList';
 import NewWindowIcon from '../../common/NewWindowIcon';
 import TraceName from '../../common/TraceName';
-import { getTraceName } from '../../../model/trace-viewer';
 import { TNil } from '../../../types';
-import { Trace } from '../../../types/trace';
+import { IOtelTrace } from '../../../types/otel';
 import { formatDatetime, formatDuration } from '../../../utils/date';
 import { getTraceLinks } from '../../../model/link-patterns';
+import { getIncompleteTraceTooltip } from '../../../model/trace-viewer';
 
 import './TracePageHeader.css';
 import ExternalLinks from '../../common/ExternalLinks';
+import { getTargetEmptyOrBlank } from '../../../utils/config/get-target';
+import TraceId from '../../common/TraceId';
 
 type TracePageHeaderEmbedProps = {
   canCollapse: boolean;
   clearSearch: () => void;
+  detailPanelMode: 'inline' | 'sidepanel';
+  enableSidePanel: boolean;
   focusUiFindMatches: () => void;
   hideMap: boolean;
   hideSummary: boolean;
   linkToStandalone: string;
   nextResult: () => void;
   onArchiveClicked: () => void;
+  onDetailPanelModeToggle: () => void;
   onSlimViewClicked: () => void;
+  onTimelineToggle: () => void;
   onTraceViewChange: (viewType: ETraceViewType) => void;
   prevResult: () => void;
   resultCount: number;
   showArchiveButton: boolean;
-  showShortcutsHelp: boolean;
   showStandaloneLink: boolean;
+  disableJsonView: boolean;
   showViewOptions: boolean;
   slimView: boolean;
   textFilter: string | TNil;
+  timelineBarsVisible: boolean;
   toSearch: string | null;
-  trace: Trace;
+  trace: IOtelTrace;
   viewType: ETraceViewType;
   updateNextViewRangeTime: (update: ViewRangeTimeUpdate) => void;
   updateViewRangeTime: TUpdateViewRangeTimeFunction;
   viewRange: IViewRange;
+  useOtelTerms: boolean;
 };
 
 export const HEADER_ITEMS = [
   {
     key: 'timestamp',
     label: 'Trace Start',
-    renderer: (trace: Trace) => {
+    renderer: (trace: IOtelTrace) => {
       const dateStr = formatDatetime(trace.startTime);
       const match = dateStr.match(/^(.+)(\.\d+)$/);
       return match ? (
@@ -86,29 +81,48 @@ export const HEADER_ITEMS = [
   {
     key: 'duration',
     label: 'Duration',
-    renderer: (trace: Trace) => formatDuration(trace.duration),
+    renderer: (trace: IOtelTrace) => formatDuration(trace.duration),
   },
   {
     key: 'service-count',
     label: 'Services',
-    renderer: (trace: Trace) => new Set(_values(trace.processes).map(p => p.serviceName)).size,
+    renderer: (trace: IOtelTrace) => trace.services.length,
   },
   {
     key: 'depth',
     label: 'Depth',
-    renderer: (trace: Trace) => _get(_maxBy(trace.spans, 'depth'), 'depth', 0) + 1,
+    renderer: (trace: IOtelTrace) => _get(_maxBy(trace.spans as any[], 'depth'), 'depth', 0) + 1,
   },
   {
     key: 'span-count',
     label: 'Total Spans',
-    renderer: (trace: Trace) => trace.spans.length,
+    renderer: (trace: IOtelTrace) => trace.spans.length,
+  },
+  {
+    key: 'incomplete',
+    label: null,
+    renderer: (trace: IOtelTrace) => {
+      const orphanCount = trace.orphanSpanCount ?? 0;
+      if (orphanCount === 0) return null;
+      const tooltipText = getIncompleteTraceTooltip(orphanCount);
+      return (
+        <Tooltip title={tooltipText}>
+          <span className="TracePageHeader--incompleteTag">
+            <IoWarning className="TracePageHeader--incompleteIcon" />
+            Incomplete
+          </span>
+        </Tooltip>
+      );
+    },
   },
 ];
 
-export function TracePageHeaderFn(props: TracePageHeaderEmbedProps & { forwardedRef: React.Ref<Input> }) {
+export function TracePageHeaderFn(props: TracePageHeaderEmbedProps & { forwardedRef: React.Ref<InputRef> }) {
   const {
     canCollapse,
     clearSearch,
+    detailPanelMode,
+    enableSidePanel,
     focusUiFindMatches,
     forwardedRef,
     hideMap,
@@ -116,22 +130,26 @@ export function TracePageHeaderFn(props: TracePageHeaderEmbedProps & { forwarded
     linkToStandalone,
     nextResult,
     onArchiveClicked,
+    onDetailPanelModeToggle,
     onSlimViewClicked,
+    onTimelineToggle,
     onTraceViewChange,
     prevResult,
     resultCount,
     showArchiveButton,
-    showShortcutsHelp,
     showStandaloneLink,
     showViewOptions,
+    disableJsonView,
     slimView,
     textFilter,
+    timelineBarsVisible,
     toSearch,
     trace,
     viewType,
     updateNextViewRangeTime,
     updateViewRangeTime,
     viewRange,
+    useOtelTerms,
   } = props;
 
   if (!trace) {
@@ -146,21 +164,23 @@ export function TracePageHeaderFn(props: TracePageHeaderEmbedProps & { forwarded
     HEADER_ITEMS.map(item => {
       const { renderer, ...rest } = item;
       return { ...rest, value: renderer(trace) };
-    });
+    }).filter(item => item.value !== null);
+
+  const traceShortID = trace.traceID.slice(0, 7);
 
   const title = (
     <h1 className={`TracePageHeader--title ${canCollapse ? 'is-collapsible' : ''}`}>
-      <TraceName traceName={getTraceName(trace.spans)} />{' '}
-      <small className="u-tx-muted">{trace.traceID.slice(0, 7)}</small>
+      <TraceName traceName={trace.traceName} /> <TraceId traceId={trace.traceID} />
     </h1>
   );
 
   return (
     <header className="TracePageHeader">
+      <DocumentTitle title={`${trace.traceEmoji} ${traceShortID}: ${trace.tracePageTitle} — Jaeger UI`} />
       <div className="TracePageHeader--titleRow">
         {toSearch && (
           <Link className="TracePageHeader--back" to={toSearch}>
-            <IoAndroidArrowBack />
+            <IoArrowBack />
           </Link>
         )}
         {links && links.length > 0 && <ExternalLinks links={links} />}
@@ -171,9 +191,7 @@ export function TracePageHeaderFn(props: TracePageHeaderEmbedProps & { forwarded
             role="switch"
             aria-checked={!slimView}
           >
-            <MdKeyboardArrowRight
-              className={`TracePageHeader--detailToggle ${!slimView ? 'is-expanded' : ''}`}
-            />
+            <IoChevronForward className={`TracePageHeader--detailToggle ${!slimView ? 'is-expanded' : ''}`} />
             {title}
           </a>
         ) : (
@@ -188,14 +206,27 @@ export function TracePageHeaderFn(props: TracePageHeaderEmbedProps & { forwarded
           resultCount={resultCount}
           textFilter={textFilter}
           navigable={viewType === ETraceViewType.TraceTimelineViewer}
+          useOtelTerms={useOtelTerms}
         />
-        {showShortcutsHelp && <KeyboardShortcutsHelp className="ub-m2" />}
+        <TraceViewSettings
+          className="ub-m2"
+          detailPanelMode={detailPanelMode}
+          enableSidePanel={enableSidePanel}
+          onDetailPanelModeToggle={onDetailPanelModeToggle}
+          onTimelineToggle={onTimelineToggle}
+          timelineBarsVisible={timelineBarsVisible}
+        />
         {showViewOptions && (
-          <AltViewOptions onTraceViewChange={onTraceViewChange} traceID={trace.traceID} viewType={viewType} />
+          <AltViewOptions
+            disableJsonView={disableJsonView}
+            onTraceViewChange={onTraceViewChange}
+            traceID={trace.traceID}
+            viewType={viewType}
+          />
         )}
         {showArchiveButton && (
           <Button className="ub-mr2 ub-flex ub-items-center" htmlType="button" onClick={onArchiveClicked}>
-            <IoIosFilingOutline className="TracePageHeader--archiveIcon" />
+            <IoFileTrayFull className="TracePageHeader--archiveIcon" />
             Archive Trace
           </Button>
         )}
@@ -203,7 +234,7 @@ export function TracePageHeaderFn(props: TracePageHeaderEmbedProps & { forwarded
           <Link
             className="u-tx-inherit ub-nowrap ub-mx2"
             to={linkToStandalone}
-            target="_blank"
+            target={getTargetEmptyOrBlank()}
             rel="noopener noreferrer"
           >
             <NewWindowIcon isLarge />
@@ -223,6 +254,6 @@ export function TracePageHeaderFn(props: TracePageHeaderEmbedProps & { forwarded
   );
 }
 
-export default React.forwardRef((props: TracePageHeaderEmbedProps, ref: React.Ref<Input>) => (
+export default React.forwardRef((props: TracePageHeaderEmbedProps, ref: React.Ref<InputRef>) => (
   <TracePageHeaderFn {...props} forwardedRef={ref} />
 ));

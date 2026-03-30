@@ -1,144 +1,250 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-jest.mock('redux-form', () => {
-  function reduxForm() {
-    return component => component;
-  }
-  function formValueSelector() {
-    return () => null;
-  }
-  const Field = () => <div />;
-  return { Field, formValueSelector, reduxForm };
-});
+jest.mock('../../api/v3/client', () => ({
+  jaegerClient: {
+    fetchServices: jest.fn(() => Promise.resolve([])),
+    fetchSpanNames: jest.fn(() => Promise.resolve([])),
+  },
+}));
 
-jest.mock('store');
+jest.mock('../../hooks/useTraceDiscovery', () => ({
+  useServices: jest.fn(() => ({ data: [], isLoading: false })),
+  useSpanNames: jest.fn(() => ({ data: [], isLoading: false })),
+}));
 
-/* eslint-disable import/first */
 import React from 'react';
-import { shallow, mount } from 'enzyme';
-import store from 'store';
-
+import { render, screen, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import { Provider } from 'react-redux';
 import { SearchTracePageImpl as SearchTracePage, mapStateToProps } from './index';
-import SearchForm from './SearchForm';
-import LoadingIndicator from '../common/LoadingIndicator';
 import { fetchedState } from '../../constants';
 import traceGenerator from '../../demo/trace-generators';
-import { MOST_RECENT } from '../../model/order-by';
+import { MOST_RECENT, MOST_SPANS } from '../../model/order-by';
 import transformTraceData from '../../model/transform-trace-data';
+import { store as globalStore } from '../../utils/configure-store';
+import { jaegerClient } from '../../api/v3/client';
+import { useServices, useSpanNames } from '../../hooks/useTraceDiscovery';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: false,
+    },
+  },
+});
+
+const AllProvider = ({ children }) => (
+  <QueryClientProvider client={queryClient}>
+    <MemoryRouter>
+      <Provider store={globalStore}>{children}</Provider>
+    </MemoryRouter>
+  </QueryClientProvider>
+);
 
 describe('<SearchTracePage>', () => {
   const queryOfResults = {};
-  let wrapper;
-  let traceResults;
+  let traces;
+  let traceResultsToDownload;
   let props;
 
-  beforeEach(() => {
-    traceResults = [{ traceID: 'a', spans: [], processes: {} }, { traceID: 'b', spans: [], processes: {} }];
-    props = {
-      queryOfResults,
-      traceResults,
+  const getDefaultProps = () => {
+    const traces = [
+      { traceID: 'a', spans: [], processes: {} },
+      { traceID: 'b', spans: [], processes: {} },
+    ];
+    const traceResultsToDownload = [
+      { traceID: 'a', spans: [], processes: {} },
+      { traceID: 'b', spans: [], processes: {} },
+    ];
+    return {
+      queryOfResults: null, // null on initial page load
+      traces,
+      traceResultsToDownload,
       diffCohort: [],
       isHomepage: false,
-      loadingServices: false,
-      loadingTraces: false,
       maxTraceDuration: 100,
-      numberOfTraceResults: traceResults.length,
-      services: null,
-      sortTracesBy: MOST_RECENT,
+      numberOfTraceResults: traces.length,
+      sortedTracesXformer: jest.fn(),
       urlQueryParams: { service: 'svc-a' },
       // actions
-      fetchServiceOperations: jest.fn(),
-      fetchServices: jest.fn(),
       searchTraces: jest.fn(),
     };
-    wrapper = shallow(<SearchTracePage {...props} />);
+  };
+
+  beforeEach(() => {
+    props = getDefaultProps();
+    traces = props.traces;
+    traceResultsToDownload = props.traceResultsToDownload;
   });
 
   it('searches for traces if `service` or `traceID` are in the query string', () => {
-    expect(props.searchTraces.mock.calls.length).toBe(1);
-  });
-
-  it('loads the services and operations if a service is stored', () => {
-    props.fetchServices.mockClear();
-    props.fetchServiceOperations.mockClear();
-    const oldFn = store.get;
-    store.get = jest.fn(() => ({ service: 'svc-b' }));
-    wrapper = mount(
-      <MemoryRouter>
+    render(
+      <AllProvider>
         <SearchTracePage {...props} />
-      </MemoryRouter>
+      </AllProvider>
     );
-    expect(props.fetchServices.mock.calls.length).toBe(1);
-    expect(props.fetchServiceOperations.mock.calls.length).toBe(1);
-    store.get = oldFn;
+    expect(props.searchTraces).toHaveBeenCalledTimes(1);
   });
 
-  it('goToTrace pushes the trace URL with {fromSearch: true} to history', () => {
-    const traceID = '15810714d6a27450';
-    const query = 'some-query';
-    const historyPush = jest.fn();
-    const historyMock = { push: historyPush };
-    wrapper = mount(
-      <MemoryRouter>
-        <SearchTracePage {...props} history={historyMock} query={query} />
-      </MemoryRouter>
+  it('searches for traces on initial page load when URL has search params (no previous results)', () => {
+    const testProps = {
+      ...props,
+      queryOfResults: null, // No previous search results
+      urlQueryParams: { service: 'test-service', limit: 20 },
+      searchTraces: jest.fn(),
+    };
+    render(
+      <AllProvider>
+        <SearchTracePage {...testProps} />
+      </AllProvider>
     );
-    wrapper
-      .find(SearchTracePage)
-      .first()
-      .instance()
-      .goToTrace(traceID);
-    expect(historyPush.mock.calls.length).toBe(1);
-    expect(historyPush.mock.calls[0][0]).toEqual({
-      pathname: `/trace/${traceID}`,
-      search: undefined,
-      state: { fromSearch: '/search?' },
-    });
+    expect(testProps.searchTraces).toHaveBeenCalledTimes(1);
+    expect(testProps.searchTraces).toHaveBeenCalledWith({ service: 'test-service', limit: 20 });
   });
 
-  it('shows a loading indicator if loading services', () => {
-    wrapper.setProps({ loadingServices: true });
-    expect(wrapper.find(LoadingIndicator).length).toBe(1);
+  it('does not search again if URL params match existing queryOfResults', () => {
+    const query = { service: 'svc-a', limit: 20 };
+    const testProps = {
+      ...props,
+      queryOfResults: query, // Already have results for this query
+      urlQueryParams: query, // Same query in URL
+      searchTraces: jest.fn(),
+    };
+    render(
+      <AllProvider>
+        <SearchTracePage {...testProps} />
+      </AllProvider>
+    );
+    expect(testProps.searchTraces).not.toHaveBeenCalled();
   });
 
-  it('shows a search form when services are loaded', () => {
+  it('uses React Query hooks to fetch services', () => {
+    render(
+      <AllProvider>
+        <SearchTracePage {...props} />
+      </AllProvider>
+    );
+    expect(useServices).toHaveBeenCalled();
+  });
+
+  it('shows a loading indicator when services are being fetched', async () => {
+    useServices.mockReturnValue({ data: [], isLoading: true, error: null });
+    const { container } = render(
+      <AllProvider>
+        <SearchTracePage {...props} />
+      </AllProvider>
+    );
+    expect(container.querySelector('.LoadingIndicator')).toBeInTheDocument();
+  });
+
+  it('calls sortedTracesXformer with correct arguments', () => {
+    const sortBy = MOST_RECENT;
+    const testProps = { ...props, sortedTracesXformer: jest.fn() };
+    render(
+      <AllProvider>
+        <SearchTracePage {...testProps} />
+      </AllProvider>
+    );
+    expect(testProps.sortedTracesXformer).toHaveBeenCalledWith(traces, sortBy);
+  });
+
+  it('handles sort change correctly', () => {
+    // For functional components, we verify behavior via props passed to child
+    const sortBy = MOST_SPANS;
+    const testProps = { ...props, sortedTracesXformer: jest.fn() };
+    render(
+      <AllProvider>
+        <SearchTracePage {...testProps} />
+      </AllProvider>
+    );
+    // Initially sorted by MOST_RECENT
+    expect(testProps.sortedTracesXformer).toHaveBeenCalledWith(traces, MOST_RECENT);
+  });
+
+  it('shows a search form', () => {
     const services = [{ name: 'svc-a', operations: ['op-a'] }];
-    wrapper.setProps({ services });
-    expect(wrapper.find(SearchForm).length).toBe(1);
+    const testProps = { ...props, services };
+    const { container } = render(
+      <AllProvider>
+        <SearchTracePage {...testProps} />
+      </AllProvider>
+    );
+    expect(container.querySelector('[data-node-key="searchForm"]')).toBeInTheDocument();
   });
 
   it('shows an error message if there is an error message', () => {
-    wrapper.setProps({ errors: [{ message: 'big-error' }] });
-    expect(wrapper.find('.js-test-error-message').length).toBe(1);
+    const testProps = { ...props, errors: [{ message: 'big-error' }] };
+    const { container } = render(
+      <AllProvider>
+        <SearchTracePage {...testProps} />
+      </AllProvider>
+    );
+    expect(container.querySelector('.js-test-error-message')).toBeInTheDocument();
   });
 
   it('shows the logo prior to searching', () => {
-    wrapper.setProps({ isHomepage: true, traceResults: [] });
-    expect(wrapper.find('.js-test-logo').length).toBe(1);
+    const testProps = { ...props, isHomepage: true, traces: [] };
+    const { container } = render(
+      <AllProvider>
+        <SearchTracePage {...testProps} />
+      </AllProvider>
+    );
+    expect(container.querySelector('.js-test-logo')).toBeInTheDocument();
   });
 
-  it('hide SearchForm if is embed', () => {
-    wrapper.setProps({ embed: true });
-    expect(wrapper.find(SearchForm).length).toBe(0);
+  it('hides SearchForm if is embed', () => {
+    const testProps = { ...props, embedded: true };
+    const { container } = render(
+      <AllProvider>
+        <SearchTracePage {...testProps} />
+      </AllProvider>
+    );
+    expect(container.querySelector('[data-node-key="searchForm"]')).not.toBeInTheDocument();
   });
 
-  it('hide logo if is embed', () => {
-    wrapper.setProps({ embed: true });
-    expect(wrapper.find('.js-test-logo').length).toBe(0);
+  it('hides logo if is embed', () => {
+    const testProps = { ...props, embedded: true };
+    const { container } = render(
+      <AllProvider>
+        <SearchTracePage {...testProps} />
+      </AllProvider>
+    );
+    expect(container.querySelector('.js-test-logo')).not.toBeInTheDocument();
+  });
+
+  it('shows Upload tab by default', () => {
+    const { container } = render(
+      <AllProvider>
+        <SearchTracePage {...props} />
+      </AllProvider>
+    );
+    expect(container.querySelector('[data-node-key="fileLoader"]')).toBeInTheDocument();
+  });
+
+  it('hides Upload tab if it is disabled via config', () => {
+    // Create a custom store with disableFileUploadControl: true
+    const customStore = require('redux').createStore(() => ({
+      ...globalStore.getState(),
+      config: {
+        ...globalStore.getState().config,
+        disableFileUploadControl: true,
+      },
+    }));
+
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <Provider store={customStore}>
+            <SearchTracePage {...props} />
+          </Provider>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+    expect(container.querySelector('[data-node-key="fileLoader"]')).not.toBeInTheDocument();
   });
 });
 
@@ -153,6 +259,7 @@ describe('mapStateToProps()', () => {
       traces: {
         [trace.traceID]: { id: trace.traceID, data: trace, state: fetchedState.DONE },
       },
+      rawTraces: [trace],
     };
     const stateServices = {
       loading: false,
@@ -161,24 +268,22 @@ describe('mapStateToProps()', () => {
       error: null,
     };
     const state = {
-      router: { location: { search: '' } },
       trace: stateTrace,
       traceDiff: {
         cohort: [trace.traceID],
       },
       services: stateServices,
+      config: {
+        disableFileUploadControl: false,
+      },
     };
 
-    const {
-      maxTraceDuration,
-      traceResults,
-      diffCohort,
-      numberOfTraceResults,
-      location,
-      ...rest
-    } = mapStateToProps(state);
-    expect(traceResults).toHaveLength(stateTrace.search.results.length);
-    expect(traceResults[0].traceID).toBe(trace.traceID);
+    const { maxTraceDuration, traceResultsToDownload, diffCohort, traces, ...rest } = mapStateToProps(state, {
+      search: '',
+    });
+    expect(traces).toHaveLength(stateTrace.search.results.length);
+    expect(traces[0].traceID).toBe(trace.traceID);
+    expect(traceResultsToDownload[0].traceID).toBe(trace.traceID);
     expect(maxTraceDuration).toBe(trace.duration);
     expect(diffCohort).toHaveLength(state.traceDiff.cohort.length);
     expect(diffCohort[0].id).toBe(trace.traceID);
@@ -188,17 +293,9 @@ describe('mapStateToProps()', () => {
       embedded: undefined,
       queryOfResults: undefined,
       isHomepage: true,
-      // the redux-form `formValueSelector` mock returns `null` for "sortBy"
-      sortTracesBy: null,
+      sortedTracesXformer: expect.any(Function),
       urlQueryParams: null,
-      services: [
-        {
-          name: stateServices.services[0],
-          operations: [],
-        },
-      ],
       loadingTraces: false,
-      loadingServices: false,
       errors: null,
     });
   });

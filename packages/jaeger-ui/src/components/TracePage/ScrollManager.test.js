@@ -1,18 +1,6 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
-/* eslint-disable import/first */
 jest.mock('./scroll-page');
 
 import { scrollBy, scrollTo } from './scroll-page';
@@ -22,13 +10,18 @@ const SPAN_HEIGHT = 2;
 
 function getTrace() {
   const spans = [];
+  const spanMap = new Map();
   const trace = {
     spans,
     duration: 2000,
     startTime: 1000,
+    spanMap,
+    rootSpans: [],
   };
   for (let i = 0; i < 10; i++) {
-    spans.push({ duration: 1, startTime: 1000, spanID: i + 1 });
+    const span = { duration: 1, startTime: 1000, spanID: (i + 1).toString() };
+    spans.push(span);
+    spanMap.set((i + 1).toString(), span);
   }
   return trace;
 }
@@ -70,19 +63,18 @@ describe('ScrollManager', () => {
   describe('_scrollPast()', () => {
     it('throws if accessors is not set', () => {
       manager.setAccessors(null);
-      expect(manager._scrollPast).toThrow();
+      expect(() => manager._scrollPast(0, 1)).toThrow();
     });
 
     it('is a noop if an invalid rowPosition is returned by the accessors', () => {
-      // eslint-disable-next-line no-console
       const oldWarn = console.warn;
-      // eslint-disable-next-line no-console
+
       console.warn = () => {};
       manager._scrollPast(null, null);
       expect(accessors.getRowPosition.mock.calls.length).toBe(1);
       expect(accessors.getViewHeight.mock.calls.length).toBe(0);
       expect(scrollTo.mock.calls.length).toBe(0);
-      // eslint-disable-next-line no-console
+
       console.warn = oldWarn;
     });
 
@@ -105,9 +97,11 @@ describe('ScrollManager', () => {
   });
 
   describe('_scrollToVisibleSpan()', () => {
-    function getRefs(spanID) {
-      return [{ refType: 'CHILD_OF', spanID }];
+    function linkParent(childSpan, parentSpan) {
+      childSpan.parentSpan = parentSpan;
+      childSpan.parentSpanID = parentSpan.spanID;
     }
+
     let scrollPastMock;
 
     beforeEach(() => {
@@ -116,11 +110,11 @@ describe('ScrollManager', () => {
     });
     it('throws if accessors is not set', () => {
       manager.setAccessors(null);
-      expect(manager._scrollToVisibleSpan).toThrow();
+      expect(() => manager._scrollToVisibleSpan(1)).toThrow();
     });
     it('exits if the trace is not set', () => {
       manager.setTrace(null);
-      manager._scrollToVisibleSpan();
+      manager._scrollToVisibleSpan(1);
       expect(scrollPastMock.mock.calls.length).toBe(0);
     });
 
@@ -137,9 +131,9 @@ describe('ScrollManager', () => {
       accessors.getTopRowIndexVisible.mockReturnValue(5);
       accessors.getBottomRowIndexVisible.mockReturnValue(5);
       manager._scrollToVisibleSpan(-1);
-      expect(scrollPastMock).lastCalledWith(5, -1);
+      expect(scrollPastMock).toHaveBeenLastCalledWith(5, -1);
       manager._scrollToVisibleSpan(1);
-      expect(scrollPastMock).lastCalledWith(5, 1);
+      expect(scrollPastMock).toHaveBeenLastCalledWith(5, 1);
     });
 
     it('skips spans that are out of view', () => {
@@ -148,9 +142,9 @@ describe('ScrollManager', () => {
       accessors.getTopRowIndexVisible.mockReturnValue(trace.spans.length - 1);
       accessors.getBottomRowIndexVisible.mockReturnValue(0);
       manager._scrollToVisibleSpan(1);
-      expect(scrollPastMock).lastCalledWith(4, 1);
+      expect(scrollPastMock).toHaveBeenLastCalledWith(4, 1);
       manager._scrollToVisibleSpan(-1);
-      expect(scrollPastMock).lastCalledWith(4, -1);
+      expect(scrollPastMock).toHaveBeenLastCalledWith(4, -1);
     });
 
     it('skips spans that do not match the text search', () => {
@@ -158,9 +152,9 @@ describe('ScrollManager', () => {
       accessors.getBottomRowIndexVisible.mockReturnValue(0);
       accessors.getSearchedSpanIDs = () => new Set([trace.spans[4].spanID]);
       manager._scrollToVisibleSpan(1);
-      expect(scrollPastMock).lastCalledWith(4, 1);
+      expect(scrollPastMock).toHaveBeenLastCalledWith(4, 1);
       manager._scrollToVisibleSpan(-1);
-      expect(scrollPastMock).lastCalledWith(4, -1);
+      expect(scrollPastMock).toHaveBeenLastCalledWith(4, -1);
     });
 
     it('scrolls to boundary when scrolling away from closest spanID in findMatches', () => {
@@ -170,39 +164,42 @@ describe('ScrollManager', () => {
       accessors.getSearchedSpanIDs = () => new Set([trace.spans[closetFindMatchesSpanID].spanID]);
 
       manager._scrollToVisibleSpan(1);
-      expect(scrollPastMock).lastCalledWith(trace.spans.length - 1, 1);
+      expect(scrollPastMock).toHaveBeenLastCalledWith(trace.spans.length - 1, 1);
 
       manager._scrollToVisibleSpan(-1);
-      expect(scrollPastMock).lastCalledWith(0, -1);
+      expect(scrollPastMock).toHaveBeenLastCalledWith(0, -1);
     });
 
     it('scrolls to last visible row when boundary is hidden', () => {
       const parentOfLastRowWithHiddenChildrenIndex = trace.spans.length - 2;
+      const parentSpan = trace.spans[parentOfLastRowWithHiddenChildrenIndex];
+      const childSpan = trace.spans[trace.spans.length - 1];
+
       accessors.getBottomRowIndexVisible.mockReturnValue(0);
-      accessors.getCollapsedChildren = () =>
-        new Set([trace.spans[parentOfLastRowWithHiddenChildrenIndex].spanID]);
+      accessors.getCollapsedChildren = () => new Set([parentSpan.spanID]);
       accessors.getSearchedSpanIDs = () => new Set([trace.spans[0].spanID]);
-      trace.spans[trace.spans.length - 1].references = getRefs(
-        trace.spans[parentOfLastRowWithHiddenChildrenIndex].spanID
-      );
+
+      linkParent(childSpan, parentSpan);
 
       manager._scrollToVisibleSpan(1);
-      expect(scrollPastMock).lastCalledWith(parentOfLastRowWithHiddenChildrenIndex, 1);
+      expect(scrollPastMock).toHaveBeenLastCalledWith(parentOfLastRowWithHiddenChildrenIndex, 1);
     });
 
     describe('scrollToNextVisibleSpan() and scrollToPrevVisibleSpan()', () => {
       beforeEach(() => {
         // change spans so 0 and 4 are top-level and their children are collapsed
         const spans = trace.spans;
-        let parentID;
+        let parentSpan;
         for (let i = 0; i < spans.length; i++) {
           switch (i) {
             case 0:
             case 4:
-              parentID = spans[i].spanID;
+              parentSpan = spans[i];
               break;
             default:
-              spans[i].references = getRefs(parentID);
+              if (parentSpan) {
+                linkParent(spans[i], parentSpan);
+              }
           }
         }
         // set which spans are "in-view" and which have collapsed children
@@ -213,29 +210,25 @@ describe('ScrollManager', () => {
 
       it('skips spans that are hidden because their parent is collapsed', () => {
         manager.scrollToNextVisibleSpan();
-        expect(scrollPastMock).lastCalledWith(4, 1);
+        expect(scrollPastMock).toHaveBeenLastCalledWith(4, 1);
         manager.scrollToPrevVisibleSpan();
-        expect(scrollPastMock).lastCalledWith(4, -1);
-      });
-
-      it('ignores references with unknown types', () => {
-        // modify spans[2] so that it has an unknown refType
-        const spans = trace.spans;
-        spans[2].references = [{ refType: 'OTHER' }];
-        manager.scrollToNextVisibleSpan();
-        expect(scrollPastMock).lastCalledWith(2, 1);
-        manager.scrollToPrevVisibleSpan();
-        expect(scrollPastMock).lastCalledWith(4, -1);
+        expect(scrollPastMock).toHaveBeenLastCalledWith(4, -1);
       });
 
       it('handles more than one level of ancestry', () => {
-        // modify spans[2] so that it has an unknown refType
+        // modify spans[2] so that it is child of spans[1] which is child of spans[0]
         const spans = trace.spans;
-        spans[2].references = getRefs(spans[1].spanID);
+        // 0 is parent of 1, 1 is parent of 2
+        // remove 1's link to 0 first to be clean? loop above already linked 1 to 0
+        linkParent(spans[2], spans[1]);
+
+        // 0 is collapsed. 1 is hidden. 2 is hidden.
+        // next visible should be 4.
+
         manager.scrollToNextVisibleSpan();
-        expect(scrollPastMock).lastCalledWith(4, 1);
+        expect(scrollPastMock).toHaveBeenLastCalledWith(4, 1);
         manager.scrollToPrevVisibleSpan();
-        expect(scrollPastMock).lastCalledWith(4, -1);
+        expect(scrollPastMock).toHaveBeenLastCalledWith(4, -1);
       });
     });
 
@@ -254,9 +247,9 @@ describe('ScrollManager', () => {
   describe('scrollPageDown() and scrollPageUp()', () => {
     it('scrolls by +/~ viewHeight when invoked', () => {
       manager.scrollPageDown();
-      expect(scrollBy).lastCalledWith(0.95 * accessors.getViewHeight(), true);
+      expect(scrollBy).toHaveBeenLastCalledWith(0.95 * accessors.getViewHeight(), true);
       manager.scrollPageUp();
-      expect(scrollBy).lastCalledWith(-0.95 * accessors.getViewHeight(), true);
+      expect(scrollBy).toHaveBeenLastCalledWith(-0.95 * accessors.getViewHeight(), true);
     });
 
     it('is a no-op if _accessors or _scroller is not defined', () => {

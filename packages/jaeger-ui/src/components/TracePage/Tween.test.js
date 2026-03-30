@@ -1,16 +1,5 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import Tween from './Tween';
 
@@ -60,12 +49,12 @@ describe('Tween', () => {
       it('schedules setTimeout if there is a delay', () => {
         const delay = 10;
         const tween = new Tween({ ...baseOptions, delay, onUpdate: jest.fn() });
-        expect(setTimeoutFn).lastCalledWith(tween._frameCallback, delay);
+        expect(setTimeoutFn).toHaveBeenLastCalledWith(tween._frameCallback, delay);
       });
 
       it('schedules animation frame if there isnt a delay', () => {
         const tween = new Tween({ ...baseOptions, onUpdate: jest.fn() });
-        expect(rafFn).lastCalledWith(tween._frameCallback);
+        expect(rafFn).toHaveBeenLastCalledWith(tween._frameCallback);
       });
     });
   });
@@ -131,7 +120,7 @@ describe('Tween', () => {
       tween._frameCallback();
       const current = tween.getCurrent();
       expect(current).toBeDefined();
-      expect(fn).lastCalledWith(current);
+      expect(fn).toHaveBeenLastCalledWith(current);
     });
 
     it('does not call onComplete if there is an onComplete callback and the tween is not complete', () => {

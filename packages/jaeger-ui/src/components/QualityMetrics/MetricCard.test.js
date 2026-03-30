@@ -1,20 +1,9 @@
 // Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import React from 'react';
-import { shallow } from 'enzyme';
-
+import { render, screen, within } from '@testing-library/react';
+import '@testing-library/jest-dom';
 import MetricCard from './MetricCard';
 
 describe('MetricCard', () => {
@@ -63,42 +52,27 @@ describe('MetricCard', () => {
   ];
 
   it('renders as expected without details', () => {
-    expect(shallow(<MetricCard metric={metric} />)).toMatchSnapshot();
-    expect(
-      shallow(
-        <MetricCard
-          metric={{
-            ...metric,
-            details: details.slice(0, 2),
-          }}
-        />
-      )
-    ).toMatchSnapshot();
+    const { container } = render(<MetricCard metric={metric} />);
+    expect(screen.getByText('Metric Name')).toBeInTheDocument();
+    expect(screen.getByText('Metric Description')).toBeInTheDocument();
+    expect(container.querySelector('.MetricCard--Details')).not.toBeInTheDocument();
   });
 
   it('renders as expected with details', () => {
-    expect(
-      shallow(
-        <MetricCard
-          metric={{
-            ...metric,
-            details,
-          }}
-        />
-      )
-    ).toMatchSnapshot();
+    render(<MetricCard metric={{ ...metric, details }} />);
+    expect(screen.getByText(metric.name)).toBeInTheDocument();
+    expect(screen.getByText(metric.description)).toBeInTheDocument();
+    details.forEach(detail => {
+      if (detail.rows && detail.rows.length) {
+        expect(screen.getByText(detail.description)).toBeInTheDocument();
+      }
+    });
   });
 
   it('renders as expected when passCount is zero', () => {
-    expect(
-      shallow(
-        <MetricCard
-          metric={{
-            ...metric,
-            passCount: 0,
-          }}
-        />
-      )
-    ).toMatchSnapshot();
+    render(<MetricCard metric={{ ...metric, passCount: 0 }} />);
+    expect(screen.getByText('Metric Name')).toBeInTheDocument();
+    expect(screen.getByText('0.0%')).toBeInTheDocument();
+    expect(screen.getByText('Passing')).toBeInTheDocument();
   });
 });

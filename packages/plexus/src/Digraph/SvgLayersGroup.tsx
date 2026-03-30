@@ -1,16 +1,5 @@
 // Copyright (c) 2019 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import * as React from 'react';
 
@@ -24,47 +13,47 @@ type TProps<T = {}, U = {}> = Omit<TSvgLayersGroup<T, U>, 'layerType' | 'key'> &
   graphState: TExposedGraphState<T, U>;
 };
 
-export default class SvgLayersGroup<T = {}, U = {}> extends React.PureComponent<TProps<T, U>> {
-  private renderLayers() {
-    const { getClassName, layers, graphState } = this.props;
-    return layers.map(layer => {
-      const { key, setOnContainer } = layer;
-      if (layer.edges) {
-        return (
-          <SvgEdgesLayer<T, U>
-            key={key}
-            getClassName={getClassName}
-            graphState={graphState}
-            markerEndId={layer.markerEndId}
-            markerStartId={layer.markerStartId}
-            setOnContainer={setOnContainer}
-            setOnEdge={layer.setOnEdge}
-          />
-        );
-      }
-      if (layer.measurable) {
-        // meassurable nodes layer
-        throw new Error('Not implemented');
-      }
+const SvgLayersGroup = <T = {}, U = {}>(props: TProps<T, U>) => {
+  const { getClassName, layers, graphState } = props;
+
+  const renderedLayers = layers.map(layer => {
+    const { key, setOnContainer } = layer;
+    if (layer.edges) {
       return (
-        <NodesLayer<T, U>
+        <SvgEdgesLayer<T, U>
           key={key}
           getClassName={getClassName}
           graphState={graphState}
-          layerType={ELayerType.Svg}
-          renderNode={layer.renderNode}
+          markerEndId={layer.markerEndId}
+          markerStartId={layer.markerStartId}
           setOnContainer={setOnContainer}
-          setOnNode={layer.setOnNode}
+          setOnEdge={layer.setOnEdge}
         />
       );
-    });
-  }
-
-  render() {
+    }
+    if (layer.measurable) {
+      // measurable nodes layer
+      throw new Error('Not implemented');
+    }
     return (
-      <SvgLayer topLayer {...this.props} classNamePart="SvgLayersGroup">
-        {this.renderLayers()}
-      </SvgLayer>
+      <NodesLayer<T, U>
+        key={key}
+        getClassName={getClassName}
+        graphState={graphState}
+        layerType={ELayerType.Svg}
+        renderNode={layer.renderNode}
+        setOnContainer={setOnContainer}
+        setOnNode={layer.setOnNode}
+      />
     );
-  }
-}
+  });
+
+  return (
+    <SvgLayer topLayer {...props} classNamePart="SvgLayersGroup">
+      {renderedLayers}
+    </SvgLayer>
+  );
+};
+
+// React.memo provides shallow comparison equivalent to PureComponent
+export default React.memo(SvgLayersGroup) as typeof SvgLayersGroup;

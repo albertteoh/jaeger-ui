@@ -1,102 +1,153 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import React from 'react';
-import { shallow } from 'enzyme';
+import { render, screen } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import userEvent from '@testing-library/user-event';
 
 import SpanDetailRow from './SpanDetailRow';
-import SpanDetail from './SpanDetail';
 import DetailState from './SpanDetail/DetailState';
 import SpanTreeOffset from './SpanTreeOffset';
 
-jest.mock('./SpanTreeOffset');
+const MockSpanDetail = jest.fn(() => <div data-testid="mocked-span-detail" />);
+jest.mock('./SpanDetail', () => ({
+  __esModule: true,
+  default: props => MockSpanDetail(props),
+}));
+
+const MockSpanTreeOffset = jest.fn(() => <div data-testid="mocked-span-tree-offset" />);
+jest.mock('./SpanTreeOffset', () => ({
+  __esModule: true,
+  default: props => MockSpanTreeOffset(props),
+}));
 
 describe('<SpanDetailRow>', () => {
   const spanID = 'some-id';
+  const span = {
+    spanID: spanID,
+    traceId: 'trace-id',
+    name: 'op-name',
+    startTimeUnixMicro: 1000n,
+    durationMicros: 100n,
+    attributes: [],
+    events: [],
+    resource: {
+      serviceName: 'service',
+      attributes: [],
+    },
+    warnings: null,
+  };
   const props = {
     color: 'some-color',
-    columnDivision: 0.5,
+    nameColumnWidth: 0.5,
+    timelineBarsVisible: true,
     detailState: new DetailState(),
     onDetailToggled: jest.fn(),
     linksGetter: jest.fn(),
-    isFilteredOut: false,
-    logItemToggle: jest.fn(),
-    logsToggle: jest.fn(),
-    processToggle: jest.fn(),
-    span: { spanID, depth: 3 },
-    tagsToggle: jest.fn(),
+    eventItemToggle: jest.fn(),
+    eventsToggle: jest.fn(),
+    resourceToggle: jest.fn(),
+    linksToggle: jest.fn(),
+    warningsToggle: jest.fn(),
+    span,
+    attributesToggle: jest.fn(),
     traceStartTime: 1000,
+    focusSpan: jest.fn(),
+    currentViewRangeTime: [0, 100],
+    traceDuration: 1000,
+    useOtelTerms: false,
   };
-
-  let wrapper;
 
   beforeEach(() => {
     props.onDetailToggled.mockReset();
     props.linksGetter.mockReset();
-    props.logItemToggle.mockReset();
-    props.logsToggle.mockReset();
-    props.processToggle.mockReset();
-    props.tagsToggle.mockReset();
-    wrapper = shallow(<SpanDetailRow {...props} />);
+    props.eventItemToggle.mockReset();
+    props.eventsToggle.mockReset();
+    props.resourceToggle.mockReset();
+    props.linksToggle.mockReset();
+    props.warningsToggle.mockReset();
+    props.attributesToggle.mockReset();
+    props.focusSpan.mockReset();
+    MockSpanDetail.mockClear();
+    MockSpanTreeOffset.mockClear();
   });
 
   it('renders without exploding', () => {
-    expect(wrapper).toBeDefined();
+    render(<SpanDetailRow {...props} />);
+    expect(screen.getByRole('switch')).toBeInTheDocument();
   });
 
-  it('escalates toggle detail', () => {
-    const calls = props.onDetailToggled.mock.calls;
-    expect(calls.length).toBe(0);
-    wrapper.find('.detail-row-expanded-accent').prop('onClick')();
-    expect(calls).toEqual([[spanID]]);
+  it('calls onDetailToggled with the spanID when the switch is clicked', async () => {
+    const user = userEvent.setup();
+    render(<SpanDetailRow {...props} />);
+    const toggleSwitch = screen.getByRole('switch');
+    expect(props.onDetailToggled).not.toHaveBeenCalled();
+    await user.click(toggleSwitch);
+    expect(props.onDetailToggled).toHaveBeenCalledTimes(1);
+    expect(props.onDetailToggled).toHaveBeenCalledWith(props.span.spanID);
   });
 
-  it('renders the span tree offset', () => {
-    const spanTreeOffset = <SpanTreeOffset span={props.span} showChildrenIcon={false} />;
-    expect(wrapper.contains(spanTreeOffset)).toBe(true);
+  it('renders the span tree offset with isDetailRow=true', () => {
+    render(<SpanDetailRow {...props} />);
+    expect(MockSpanTreeOffset).toHaveBeenCalledTimes(1);
+    expect(MockSpanTreeOffset).toHaveBeenCalledWith(
+      expect.objectContaining({
+        span: props.span,
+        isDetailRow: true,
+      })
+    );
   });
 
   it('renders the "expanded accent"', () => {
-    const elm = <span className="detail-row-expanded-accent" style={{ borderColor: props.color }} />;
-    expect(wrapper.containsMatchingElement(elm)).toBe(true);
+    render(<SpanDetailRow {...props} />);
+    const accentSwitch = screen.getByRole('switch');
+    expect(accentSwitch).toBeInTheDocument();
+    expect(accentSwitch).toHaveClass('detail-row-expanded-accent');
+    expect(accentSwitch).toHaveStyle(`border-color: ${props.color}`);
   });
 
   it('renders the SpanDetail', () => {
-    const spanDetail = (
-      <SpanDetail
-        detailState={props.detailState}
-        linksGetter={wrapper.instance()._linksGetter}
-        logItemToggle={props.logItemToggle}
-        logsToggle={props.logsToggle}
-        processToggle={props.processToggle}
-        span={props.span}
-        tagsToggle={props.tagsToggle}
-        traceStartTime={props.traceStartTime}
-      />
-    );
-    expect(wrapper.contains(spanDetail)).toBe(true);
+    render(<SpanDetailRow {...props} />);
+    expect(screen.getByTestId('mocked-span-detail')).toBeInTheDocument();
+    expect(MockSpanDetail).toHaveBeenCalledTimes(1);
+    const receivedProps = MockSpanDetail.mock.calls[0][0];
+
+    expect(receivedProps.detailState).toBe(props.detailState);
+    expect(receivedProps.linksGetter).toEqual(expect.any(Function));
+    expect(receivedProps.eventItemToggle).toEqual(expect.any(Function));
+    expect(receivedProps.eventsToggle).toBe(props.eventsToggle);
+    expect(receivedProps.resourceToggle).toBe(props.resourceToggle);
+    // span is now converted to IOtelSpan via OtelSpanFacade
+    expect(receivedProps.span).toHaveProperty('spanID', props.span.spanID);
+    expect(receivedProps.span).toHaveProperty('name', props.span.name);
+    expect(receivedProps.attributesToggle).toBe(props.attributesToggle);
+    expect(receivedProps.traceStartTime).toBe(props.traceStartTime);
+  });
+
+  describe('tree-only mode (timelineBarsVisible=false)', () => {
+    it('renders the SpanDetail at full width', () => {
+      const { container } = render(<SpanDetailRow {...props} timelineBarsVisible={false} />);
+      const cells = container.querySelectorAll('[style*="flex-basis"]');
+      // left cell = 0%, right cell (detail) = 100%
+      const fullWidthCell = Array.from(cells).find(el => el.style.flexBasis === '100%');
+      expect(fullWidthCell).toBeTruthy();
+      expect(fullWidthCell.querySelector('[data-testid="mocked-span-detail"]')).toBeInTheDocument();
+    });
   });
 
   it('adds span when calling linksGetter', () => {
-    const spanDetail = wrapper.find(SpanDetail);
-    const linksGetter = spanDetail.prop('linksGetter');
-    const tags = [{ key: 'myKey', value: 'myValue' }];
+    render(<SpanDetailRow {...props} />);
+    expect(MockSpanDetail).toHaveBeenCalled();
+    const receivedProps = MockSpanDetail.mock.calls[0][0];
+    const linksGetter = receivedProps.linksGetter;
+    const attributes = [{ key: 'myKey', value: 'myValue' }];
     const linksGetterResponse = {};
     props.linksGetter.mockReturnValueOnce(linksGetterResponse);
-    const result = linksGetter(tags, 0);
+    const result = linksGetter(attributes, 0);
     expect(result).toBe(linksGetterResponse);
     expect(props.linksGetter).toHaveBeenCalledTimes(1);
-    expect(props.linksGetter).toHaveBeenCalledWith(props.span, tags, 0);
+    // linksGetter is passed directly to SpanDetail (no adapter needed since props already have OTEL signature)
+    expect(props.linksGetter).toHaveBeenCalledWith(attributes, 0);
   });
 });

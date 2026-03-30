@@ -1,27 +1,15 @@
 // Copyright (c) 2018 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import * as React from 'react';
-import { Button, Input } from 'antd';
+import { Button, Input, InputRef, Tooltip } from 'antd';
 import cx from 'classnames';
-import IoAndroidLocate from 'react-icons/lib/io/android-locate';
+import { IoLocate, IoHelp, IoClose, IoChevronDown, IoChevronUp } from 'react-icons/io5';
 
 import * as markers from './TracePageSearchBar.markers';
 import { trackFilter } from '../index.track';
 import UiFindInput from '../../common/UiFindInput';
 import { TNil } from '../../../types';
-
 import './TracePageSearchBar.css';
 
 type TracePageSearchBarProps = {
@@ -32,11 +20,11 @@ type TracePageSearchBarProps = {
   focusUiFindMatches: () => void;
   resultCount: number;
   navigable: boolean;
+  useOtelTerms: boolean;
 };
 
-export function TracePageSearchBarFn(props: TracePageSearchBarProps & { forwardedRef: React.Ref<Input> }) {
+export function TracePageSearchBarFn(props: TracePageSearchBarProps & { forwardedRef: React.Ref<InputRef> }) {
   const {
-    clearSearch,
     focusUiFindMatches,
     forwardedRef,
     navigable,
@@ -44,6 +32,7 @@ export function TracePageSearchBarFn(props: TracePageSearchBarProps & { forwarde
     prevResult,
     resultCount,
     textFilter,
+    useOtelTerms,
   } = props;
 
   const count = textFilter ? <span className="TracePageSearchBar--count">{resultCount}</span> : null;
@@ -56,15 +45,49 @@ export function TracePageSearchBarFn(props: TracePageSearchBarProps & { forwarde
     suffix: count,
   };
 
+  const renderTooltip = () => {
+    return (
+      <div style={{ wordBreak: 'normal' }}>
+        <p>
+          This is an in-page search. Enter the query as a list of space-separated string terms. Each term is
+          used in a substring match against any of the following data elements: service name,{' '}
+          {useOtelTerms ? 'span name' : 'operation name'}, span ID, and key-value pairs in{' '}
+          {useOtelTerms ? 'attributes and events' : 'tags and logs'}. The spans that match any of the search
+          terms will be highlighted.
+        </p>
+        <p>
+          For exact phrase search surround the query in double quotes like{' '}
+          <code>&quot;The quick brown fox&quot;</code>
+        </p>
+        <p>
+          When matching key-value pairs, the substring search is applied separately against the key, the
+          value, and the concatenated <code>&quot;key=value&quot;</code> string. The latter allows searching
+          for exact matches like <code>http.status_code=200</code>.
+        </p>
+        <p>
+          To preclude certain key-value pairs from participating in the matching, prefix the key with the
+          minus <code>&apos;-&apos;</code> sign, e.g., <code>-http.status_code</code>.
+        </p>
+      </div>
+    );
+  };
+
   return (
     <div className="TracePageSearchBar">
       {/* style inline because compact overwrites the display */}
       <Input.Group className="ub-justify-end" compact style={{ display: 'flex' }}>
-        <UiFindInput
-          inputProps={uiFindInputInputProps}
-          forwardedRef={forwardedRef}
-          trackFindFunction={trackFilter}
-        />
+        <UiFindInput inputProps={uiFindInputInputProps} ref={forwardedRef} trackFindFunction={trackFilter} />
+        <Tooltip
+          arrow={{ pointAtCenter: true }}
+          placement="bottomLeft"
+          trigger="hover"
+          overlayStyle={{ maxWidth: '600px' }} // This is a large tooltip and the default is too narrow.
+          title={renderTooltip()}
+        >
+          <div className="help-btn-container">
+            <IoHelp className="help-button" />
+          </div>
+        </Tooltip>
         {navigable && (
           <>
             <Button
@@ -73,36 +96,33 @@ export function TracePageSearchBarFn(props: TracePageSearchBarProps & { forwarde
               htmlType="button"
               onClick={focusUiFindMatches}
             >
-              <IoAndroidLocate />
+              <IoLocate />
             </Button>
             <Button
-              className={btnClass}
+              className={cx(btnClass, 'TracePageSearchBar--ButtonUp')}
               disabled={!textFilter}
               htmlType="button"
-              icon="up"
+              data-testid="UpOutlined"
               onClick={prevResult}
-            />
+            >
+              <IoChevronUp />
+            </Button>
             <Button
-              className={btnClass}
+              className={cx(btnClass, 'TracePageSearchBar--ButtonDown')}
               disabled={!textFilter}
               htmlType="button"
-              icon="down"
+              data-testid="DownOutlined"
               onClick={nextResult}
-            />
+            >
+              <IoChevronDown />
+            </Button>
           </>
         )}
-        <Button
-          className={btnClass}
-          disabled={!textFilter}
-          htmlType="button"
-          icon="close"
-          onClick={clearSearch}
-        />
       </Input.Group>
     </div>
   );
 }
 
-export default React.forwardRef((props: TracePageSearchBarProps, ref: React.Ref<Input>) => (
+export default React.forwardRef((props: TracePageSearchBarProps, ref: React.Ref<InputRef>) => (
   <TracePageSearchBarFn {...props} forwardedRef={ref} />
 ));

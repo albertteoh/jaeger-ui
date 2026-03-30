@@ -1,18 +1,5 @@
 // Copyright (c) 2019 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-/* eslint-disable import/first */
+// SPDX-License-Identifier: Apache-2.0
 
 jest.mock('../../../utils/tracking');
 
@@ -54,6 +41,24 @@ describe('TracePageHeader.track', () => {
       category: track.CATEGORY_ALT_VIEW,
       msg: 'tracks a GA event for viewing trace JSON (raw)',
       fn: 'trackRawJsonView',
+    },
+    {
+      action: track.ACTION_STATISTICS,
+      category: track.CATEGORY_ALT_VIEW,
+      msg: 'tracks a GA event for viewing trace statistics',
+      fn: 'trackStatisticsView',
+    },
+    {
+      action: track.ACTION_TRACE_SPANS_VIEW,
+      category: track.CATEGORY_ALT_VIEW,
+      msg: 'tracks a GA event for viewing trace spans table',
+      fn: 'trackTraceSpansView',
+    },
+    {
+      action: track.ACTION_TRACE_LOGS_VIEW,
+      category: track.CATEGORY_ALT_VIEW,
+      msg: 'tracks a GA event for viewing trace logs',
+      fn: 'trackTraceLogsView',
     },
     {
       action: OPEN,

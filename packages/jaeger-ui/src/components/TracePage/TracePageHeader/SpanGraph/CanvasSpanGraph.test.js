@@ -1,32 +1,76 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import React from 'react';
-import { shallow } from 'enzyme';
+import { render } from '@testing-library/react';
+import '@testing-library/jest-dom';
 
-import CanvasSpanGraph from './CanvasSpanGraph';
+import CanvasSpanGraph, { getColor } from './CanvasSpanGraph';
+import * as renderUtils from './render-into-canvas'; // Import the module to mock
+import colorGenerator from '../../../../utils/color-generator';
 
-describe('<CanvasSpanGraph>', () => {
-  it('renders without exploding', () => {
-    const items = [{ valueWidth: 1, valueOffset: 1, serviceName: 'service-name-0' }];
-    const wrapper = shallow(<CanvasSpanGraph items={[]} valueWidth={4000} />);
-    expect(wrapper).toBeDefined();
-    wrapper.instance()._setCanvasRef({
-      getContext: () => ({
-        fillRect: () => {},
-      }),
+// Mock the renderIntoCanvas function
+jest.mock('./render-into-canvas');
+
+describe('<CanvasSpanGraph />', () => {
+  const items = [{ valueWidth: 1, valueOffset: 1, serviceName: 'service-name-0' }];
+  const props = {
+    items: [],
+    valueWidth: 4000,
+  };
+
+  // Store the original prototype
+  const originalGetContext = HTMLCanvasElement.prototype.getContext;
+
+  beforeEach(() => {
+    // Mock getContext before each test
+    HTMLCanvasElement.prototype.getContext = () => ({
+      fillRect: jest.fn(),
+      clearRect: jest.fn(),
+      // Add other methods if needed by renderIntoCanvas
     });
-    wrapper.setProps({ items });
+    // Reset the mock before each test
+    renderUtils.default.mockClear();
+  });
+
+  afterEach(() => {
+    // Restore the original prototype after each test
+    HTMLCanvasElement.prototype.getContext = originalGetContext;
+    jest.restoreAllMocks();
+  });
+
+  it('renders without exploding', () => {
+    // Mock getComputedStyle
+    window.getComputedStyle = jest.fn().mockReturnValue({
+      getPropertyValue: jest.fn().mockReturnValue('#fff'),
+    });
+
+    const { container, rerender } = render(<CanvasSpanGraph {...props} />);
+    const canvas = container.querySelector('.CanvasSpanGraph');
+
+    expect(canvas).toBeInTheDocument();
+    // Check if renderIntoCanvas was called on mount
+    expect(renderUtils.default).toHaveBeenCalledTimes(1);
+
+    // Update props and rerender
+    rerender(<CanvasSpanGraph {...props} items={items} />);
+
+    // Check if renderIntoCanvas was called again on update
+    expect(renderUtils.default).toHaveBeenCalledTimes(2);
+    expect(renderUtils.default).toHaveBeenLastCalledWith(
+      canvas,
+      items,
+      props.valueWidth,
+      expect.any(Function),
+      '#fff'
+    );
+  });
+
+  it('calls colorGenerator.getRgbColorByKey with correct hex', () => {
+    const spy = jest.spyOn(colorGenerator, 'getRgbColorByKey');
+    const hex = '#abcdef';
+    getColor(hex);
+    expect(spy).toHaveBeenCalledWith(hex);
+    spy.mockRestore();
   });
 });

@@ -1,20 +1,13 @@
 // Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
-import * as reactRouterDom from 'react-router-dom';
+import * as reactRouterDomCompat from 'react-router-dom';
 
 import { ROUTE_PATH, matches, getUrl, getUrlState } from './url';
+
+jest.mock('react-router-dom', () => ({
+  matchPath: jest.fn(),
+}));
 
 describe('TraceDiff/url', () => {
   const lookback = 42;
@@ -25,16 +18,12 @@ describe('TraceDiff/url', () => {
     let matchPathSpy;
 
     beforeAll(() => {
-      matchPathSpy = jest.spyOn(reactRouterDom, 'matchPath');
+      matchPathSpy = jest.spyOn(reactRouterDomCompat, 'matchPath');
     });
 
     it('calls matchPath with expected arguments', () => {
       matches(path);
-      expect(matchPathSpy).toHaveBeenLastCalledWith(path, {
-        path: ROUTE_PATH,
-        strict: true,
-        exact: true,
-      });
+      expect(matchPathSpy).toHaveBeenLastCalledWith(ROUTE_PATH, path);
     });
 
     it("returns truthiness of matchPath's return value", () => {

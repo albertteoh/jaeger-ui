@@ -1,25 +1,14 @@
 // Copyright (c) 2019 The Jaeger Authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import React from 'react';
-import { shallow } from 'enzyme';
-import { Menu, Dropdown } from 'antd';
+import { render, screen, fireEvent } from '@testing-library/react';
+import '@testing-library/jest-dom';
 
 import ExternalLinks from './ExternalLinks';
 
 describe('<ExternalLinks>', () => {
-  describe('render  links links', () => {
+  describe('renders multiple links correctly', () => {
     it('renders dropdown with multiple links', () => {
       const links = [
         { url: 'http://nowhere/', text: 'some text' },
@@ -27,28 +16,32 @@ describe('<ExternalLinks>', () => {
         { url: 'http://link/', text: 'link text' },
       ];
 
-      const wrapper = shallow(<ExternalLinks links={links} />);
-      const dropdown = wrapper.find(Dropdown);
-      expect(dropdown.length).toBe(1);
-      const linkValues = shallow(dropdown.first().props().overlay);
-      const submenuItems = linkValues.find(Menu.Item);
-      expect(submenuItems.length).toBe(links.length);
-      submenuItems.forEach((subMenu, i) => {
-        const linkValue = subMenu.find('LinkValue');
-        expect(linkValue.props().href).toBe(links[i].url);
-        expect(linkValue.props().children).toBe(links[i].text);
+      render(<ExternalLinks links={links} />);
+
+      // The dropdown should be rendered
+      const dropdown = screen.getByTestId('dropdown');
+      expect(dropdown).toBeInTheDocument();
+
+      // Open the dropdown and check the rendered links
+      fireEvent.click(dropdown);
+
+      const dropdownLinks = screen.getAllByRole('link');
+      expect(dropdownLinks).toHaveLength(links.length);
+      links.forEach(({ text, url }, index) => {
+        expect(dropdownLinks[index]).toHaveAttribute('href', url);
+        expect(dropdownLinks[index]).toHaveAttribute('title', text);
       });
     });
 
-    it('renders one link', () => {
+    it('renders one link correctly', () => {
       const links = [{ url: 'http://nowhere/', text: 'some text' }];
-      const wrapper = shallow(<ExternalLinks links={links} />);
-      const dropdown = wrapper.find(Dropdown);
-      expect(dropdown.length).toBe(0);
-      const linkValues = wrapper.find('LinkValue');
-      expect(linkValues.length).toBe(1);
-      expect(linkValues.prop('href')).toBe(links[0].url);
-      expect(linkValues.prop('title')).toBe(links[0].text);
+      render(<ExternalLinks links={links} />);
+
+      // There should be no dropdown rendered
+      expect(screen.queryByTestId('dropdown')).toBeNull();
+
+      // There should be one link rendered with the correct title and href
+      expect(screen.getByRole('link', { title: links[0].text })).toHaveAttribute('href', links[0].url);
     });
   });
 });

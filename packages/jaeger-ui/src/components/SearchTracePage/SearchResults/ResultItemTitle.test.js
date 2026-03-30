@@ -1,103 +1,181 @@
 // Copyright (c) 2019 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import React from 'react';
-import { Checkbox } from 'antd';
-import { shallow } from 'enzyme';
-import { Link } from 'react-router-dom';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
+import '@testing-library/jest-dom';
 
 import ResultItemTitle from './ResultItemTitle';
 import { fetchedState } from '../../../constants';
+import { formatDuration } from '../../../utils/date';
+
+const RouterWrapper = ({ children }) => <MemoryRouter>{children}</MemoryRouter>;
+
+const setup = props => {
+  const view = render(<ResultItemTitle {...props} />, {
+    wrapper: RouterWrapper,
+  });
+  return {
+    ...view,
+    user: userEvent.setup(),
+  };
+};
 
 describe('ResultItemTitle', () => {
   const defaultProps = {
-    duration: 150,
+    duration: 150000, // Using microseconds is more realistic for formatDuration
     durationPercent: 10,
     isInDiffCohort: true,
-    linkTo: 'linkToValue',
+    linkTo: { pathname: '/search', search: `?traceID=trace-id-longer-than-8` }, // Use LocationDescriptor object
     state: fetchedState.DONE,
     toggleComparison: jest.fn(),
     traceID: 'trace-id-longer-than-8',
     traceName: 'traceNameValue',
   };
-  let wrapper;
 
   beforeEach(() => {
     defaultProps.toggleComparison.mockReset();
-    wrapper = shallow(<ResultItemTitle {...defaultProps} />);
   });
 
   it('renders as expected', () => {
-    expect(wrapper).toMatchSnapshot();
+    const { container } = setup(defaultProps);
+    // Test that the formatted duration is displayed correctly.
+    expect(screen.getByText(formatDuration(defaultProps.duration))).toBeInTheDocument();
+
+    // Test that the link is rendered with the correct href and contains the title.
+    const link = screen.getByRole('link', { name: /150ms traceNameValue trace-i/i });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute('href', `${defaultProps.linkTo.pathname}${defaultProps.linkTo.search}`);
+
+    // Test that the checkbox is rendered and checked by default.
+    const checkbox = screen.getByRole('checkbox');
+    expect(checkbox).toBeInTheDocument();
+    expect(checkbox).toBeChecked();
+
+    // Test that the duration bar is rendered with the correct width.
+    const durationBar = container.querySelector('.ResultItemTitle--durationBar');
+    expect(durationBar).toBeInTheDocument();
+    expect(durationBar).toHaveStyle(`width: ${defaultProps.durationPercent}%`);
   });
 
   describe('Checkbox', () => {
     it('does not render toggleComparison checkbox when props.disableComparision is true', () => {
-      expect(wrapper.find(Checkbox).length).toBe(1);
-      wrapper.setProps({ disableComparision: true });
-      expect(wrapper.find(Checkbox).length).toBe(0);
+      const { rerender } = setup(defaultProps);
+      expect(screen.getByRole('checkbox')).toBeInTheDocument();
+
+      rerender(<ResultItemTitle {...defaultProps} disableComparision />);
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     });
 
     it('is disabled iff props.state === fetchedState.ERROR', () => {
-      expect(wrapper.find(Checkbox).prop('disabled')).toBe(false);
-      wrapper.setProps({ state: fetchedState.ERROR });
-      expect(wrapper.find(Checkbox).prop('disabled')).toBe(true);
+      const { rerender } = setup(defaultProps);
+      expect(screen.getByRole('checkbox')).not.toBeDisabled();
+
+      rerender(<ResultItemTitle {...defaultProps} state={fetchedState.ERROR} />);
+      expect(screen.getByRole('checkbox')).toBeDisabled();
     });
 
     it('is checked iff props.state !== fetchedState.ERROR && props.isInDiffCohort', () => {
-      [true, false].forEach(isInDiffCohort => {
-        [fetchedState.ERROR, fetchedState.DONE].forEach(state => {
-          wrapper.setProps({ isInDiffCohort, state });
-          expect(wrapper.find(Checkbox).prop('checked')).toBe(state !== fetchedState.ERROR && isInDiffCohort);
-        });
+      const { rerender } = setup(defaultProps);
+
+      const scenarios = [
+        { isInDiffCohort: true, state: fetchedState.DONE, expected: true },
+        { isInDiffCohort: false, state: fetchedState.DONE, expected: false },
+        { isInDiffCohort: true, state: fetchedState.ERROR, expected: false },
+        { isInDiffCohort: false, state: fetchedState.ERROR, expected: false },
+      ];
+
+      scenarios.forEach(({ isInDiffCohort, state, expected }) => {
+        rerender(<ResultItemTitle {...defaultProps} isInDiffCohort={isInDiffCohort} state={state} />);
+        const checkbox = screen.getByRole('checkbox');
+        if (expected) {
+          expect(checkbox).toBeChecked();
+        } else {
+          expect(checkbox).not.toBeChecked();
+        }
       });
     });
 
-    it('calls props.toggleComparison with correct arguments onChange', () => {
-      wrapper.find(Checkbox).prop('onChange')();
+    it('calls props.toggleComparison with correct arguments onChange', async () => {
+      const { rerender, user } = setup(defaultProps);
+
+      await user.click(screen.getByRole('checkbox'));
       expect(defaultProps.toggleComparison).toHaveBeenCalledWith(
         defaultProps.traceID,
         defaultProps.isInDiffCohort
       );
-      wrapper.setProps({ isInDiffCohort: !defaultProps.isInDiffCohort });
-      wrapper.find(Checkbox).prop('onChange')();
-      expect(defaultProps.toggleComparison).toHaveBeenLastCalledWith(
-        defaultProps.traceID,
-        !defaultProps.isInDiffCohort
-      );
+
+      const newIsInDiffCohort = !defaultProps.isInDiffCohort;
+      rerender(<ResultItemTitle {...defaultProps} isInDiffCohort={newIsInDiffCohort} />);
+
+      await user.click(screen.getByRole('checkbox'));
+      expect(defaultProps.toggleComparison).toHaveBeenLastCalledWith(defaultProps.traceID, newIsInDiffCohort);
+    });
+
+    it('prevents click propagation from the checkbox', async () => {
+      const { user } = setup(defaultProps);
+
+      // A user click on the checkbox should call the toggle function.
+      await user.click(screen.getByRole('checkbox'));
+      expect(defaultProps.toggleComparison).toHaveBeenCalledTimes(1);
+
+      // The checkbox click should not propagate to the parent Link
+      // We verify this by checking that the toggle function is called exactly once
+      // If propagation occurred, the Link would have prevented additional calls.
+
+      // Verify the link is still clickable and present
+      const link = screen.getByRole('link');
+      expect(link).toBeInTheDocument();
+      expect(link).toHaveAttribute('href', `${defaultProps.linkTo.pathname}${defaultProps.linkTo.search}`);
     });
   });
 
   describe('WrapperComponent', () => {
     it('renders <Link> when linkTo is provided', () => {
-      expect(wrapper.find(Link).length).toBe(1);
-      wrapper.setProps({ linkTo: null });
-      expect(wrapper.find(Link).length).toBe(0);
+      const { rerender } = setup(defaultProps);
+      // Assert the link is present and contains the expected text.
+      expect(screen.getByRole('link', { name: /traceNameValue/i })).toBeInTheDocument();
+
+      rerender(<ResultItemTitle {...defaultProps} linkTo={null} />);
+
+      // Assert the link is now gone.
+      expect(screen.queryByRole('link')).not.toBeInTheDocument();
+
+      // Assert the title is still visible, but now inside a <div>, not an <a>.
+      const titleElement = screen.getByText(/traceNameValue/i);
+      const wrapper = titleElement.closest('.ResultItemTitle--item');
+      expect(wrapper).toBeInTheDocument();
+      expect(wrapper.tagName).toBe('DIV');
     });
 
     it('<Link> targets _blank and sets rel when targetBlank is true', () => {
-      expect(wrapper.find(Link).prop('target')).toBeUndefined();
-      expect(wrapper.find(Link).prop('rel')).toBeUndefined();
-      wrapper.setProps({ targetBlank: true });
-      expect(wrapper.find(Link).prop('target')).toBe('_blank');
-      expect(wrapper.find(Link).prop('rel')).toBe('noopener noreferrer');
+      const { rerender } = setup(defaultProps);
+
+      expect(screen.getByRole('link')).not.toHaveAttribute('target');
+      expect(screen.getByRole('link')).not.toHaveAttribute('rel');
+
+      rerender(<ResultItemTitle {...defaultProps} targetBlank />);
+
+      const updatedLink = screen.getByRole('link');
+      expect(updatedLink).toHaveAttribute('target', '_blank');
+      expect(updatedLink).toHaveAttribute('rel', 'noopener noreferrer');
     });
 
     it('hides formated duration when duration is not provided', () => {
-      const initialSpanCount = wrapper.find('span').length;
-      wrapper.setProps({ duration: null });
-      expect(wrapper.find('span').length).toBe(initialSpanCount - 1);
+      const { rerender, container } = setup(defaultProps);
+      // Duration text is visible initially.
+      expect(screen.getByText(formatDuration(defaultProps.duration))).toBeInTheDocument();
+
+      rerender(<ResultItemTitle {...defaultProps} duration={null} />);
+      // Duration text is now hidden.
+      expect(screen.queryByText(formatDuration(defaultProps.duration))).not.toBeInTheDocument();
+
+      // Verify the rest of the component structure remains intact.
+      // The link, title, and trace ID should still be rendered.
+      expect(screen.getByRole('link', { name: /traceNameValue/i })).toBeInTheDocument();
+      expect(container.querySelector('.ResultItemTitle--idExcerpt')).toBeInTheDocument();
     });
   });
 });

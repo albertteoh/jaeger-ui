@@ -1,35 +1,31 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import React from 'react';
-import { Dropdown, Icon, Menu } from 'antd';
+import { Dropdown, Menu, MenuProps } from 'antd';
+import { IoChevronDown } from 'react-icons/io5';
 import _has from 'lodash/has';
 import { connect } from 'react-redux';
-import { RouteComponentProps, Link, withRouter } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 
 import TraceIDSearchInput from './TraceIDSearchInput';
+import ThemeToggleButton from './ThemeToggleButton';
+import Branding from './Branding';
 import * as dependencyGraph from '../DependencyGraph/url';
 import * as deepDependencies from '../DeepDependencies/url';
 import * as qualityMetrics from '../QualityMetrics/url';
 import * as searchUrl from '../SearchTracePage/url';
 import * as diffUrl from '../TraceDiff/url';
+import * as monitorATMUrl from '../Monitor/url';
 import { ReduxState } from '../../types';
 import { ConfigMenuItem, ConfigMenuGroup } from '../../types/config';
-import { getConfigValue } from '../../utils/config/get-config';
+import getConfig from '../../utils/config/get-config';
 import prefixUrl from '../../utils/prefix-url';
 
-type Props = RouteComponentProps<any> & ReduxState;
+import './TopNav.css';
+import withRouteProps, { IWithRouteProps } from '../../utils/withRouteProps';
+
+type Props = ReduxState & IWithRouteProps;
 
 const NAV_LINKS = [
   {
@@ -44,7 +40,7 @@ const NAV_LINKS = [
   },
 ];
 
-if (getConfigValue('dependencies.menuEnabled')) {
+if (getConfig().dependencies?.menuEnabled) {
   NAV_LINKS.push({
     to: dependencyGraph.getUrl(),
     matches: dependencyGraph.matches,
@@ -52,7 +48,7 @@ if (getConfigValue('dependencies.menuEnabled')) {
   });
 }
 
-if (getConfigValue('deepDependencies.menuEnabled')) {
+if (getConfig().deepDependencies?.menuEnabled) {
   NAV_LINKS.push({
     to: deepDependencies.getUrl(),
     matches: deepDependencies.matches,
@@ -60,11 +56,19 @@ if (getConfigValue('deepDependencies.menuEnabled')) {
   });
 }
 
-if (getConfigValue('qualityMetrics.menuEnabled')) {
+if (getConfig().qualityMetrics?.menuEnabled) {
   NAV_LINKS.push({
     to: qualityMetrics.getUrl(),
     matches: qualityMetrics.matches,
-    text: getConfigValue('qualityMetrics.menuLabel'),
+    text: getConfig().qualityMetrics?.menuLabel ?? '',
+  });
+}
+
+if (getConfig().storageCapabilities?.metricsStorage) {
+  NAV_LINKS.push({
+    to: monitorATMUrl.getUrl(),
+    matches: monitorATMUrl.matches,
+    text: 'Monitor',
   });
 }
 
@@ -75,19 +79,16 @@ function getItem(item: ConfigMenuItem) {
       {label}
     </a>
   );
-  return (
-    <Menu.Item key={label} disabled={!url}>
-      {url ? link : label}
-    </Menu.Item>
-  );
+
+  return { label: url ? link : label, key: label, disabled: !url };
 }
 
 function CustomNavDropdown({ label, items }: ConfigMenuGroup) {
-  const menuItems = <Menu>{items.map(getItem)}</Menu>;
+  const menuItems = items.map(getItem);
   return (
-    <Dropdown overlay={menuItems} placement="bottomRight">
-      <a>
-        {label} <Icon type="down" />
+    <Dropdown menu={{ items: menuItems }} placement="bottomRight">
+      <a className="Dropdown--icon-container">
+        {label} <IoChevronDown className="Dropdown--icon" />
       </a>
     </Dropdown>
   );
@@ -97,44 +98,72 @@ function isItem(itemOrGroup: ConfigMenuItem | ConfigMenuGroup): itemOrGroup is C
   return !_has(itemOrGroup, 'items');
 }
 
+const itemsGlobalLeft: MenuProps['items'] = [
+  {
+    label: <Branding />,
+    key: 'Branding',
+  },
+];
+
 export function TopNavImpl(props: Props) {
-  const { config, router } = props;
-  const { pathname } = router.location;
+  const { config, pathname } = props;
   const menuItems = Array.isArray(config.menu) ? config.menu : [];
 
+  const itemsGlobalRight: MenuProps['items'] = [
+    {
+      label: <TraceIDSearchInput />,
+      key: 'TraceIDSearchInput',
+    },
+    ...menuItems.map(m => {
+      if (isItem(m)) {
+        return { label: getItem(m).label, key: getItem(m).key };
+      }
+      return { label: <CustomNavDropdown key={m.label} {...m} />, key: m.label };
+    }),
+    ...(getConfig().themes?.enabled
+      ? [
+          {
+            label: <ThemeToggleButton />,
+            key: 'ThemeToggleButton',
+          },
+        ]
+      : []),
+  ];
+
   return (
-    <div>
-      <Menu theme="dark" mode="horizontal" selectable={false} className="ub-right" selectedKeys={[pathname]}>
-        <Menu.Item>
-          <TraceIDSearchInput />
-        </Menu.Item>
-        {menuItems.map(m => {
-          if (isItem(m)) {
-            return getItem(m);
-          }
-          return (
-            <Menu.Item key={m.label}>
-              <CustomNavDropdown key={m.label} {...m} />
-            </Menu.Item>
-          );
-        })}
-      </Menu>
-      <Menu theme="dark" mode="horizontal" selectable={false} selectedKeys={[pathname]}>
-        <Menu.Item>
-          <Link to={prefixUrl('/')} style={{ fontSize: '14px', fontWeight: 500 }}>
-            JAEGER UI
-          </Link>
-        </Menu.Item>
-        {NAV_LINKS.map(({ matches, to, text }) => {
-          const url = typeof to === 'string' ? to : to(props);
-          const key = matches(pathname) ? pathname : url;
-          return (
-            <Menu.Item key={key}>
-              <Link to={url}>{text}</Link>
-            </Menu.Item>
-          );
-        })}
-      </Menu>
+    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+      <Menu
+        theme="dark"
+        items={itemsGlobalLeft?.concat(
+          NAV_LINKS.map(({ matches, to, text }) => {
+            const url = typeof to === 'string' ? to : to(props);
+            const key = matches(pathname) ? pathname : url;
+            return {
+              key,
+              label: (
+                <Link style={{ outline: 'revert' }} to={url}>
+                  {text}
+                </Link>
+              ),
+            };
+          })
+        )}
+        className="Menu--item"
+        mode="horizontal"
+        selectable={false}
+        selectedKeys={[pathname]}
+        style={{ flex: '1 1 0', minWidth: 0 }}
+      />
+      <Menu
+        theme="dark"
+        items={itemsGlobalRight}
+        className="Menu--item"
+        mode="horizontal"
+        selectable={false}
+        disabledOverflow
+        selectedKeys={[pathname]}
+        style={{ flex: '0 1 auto', minWidth: 0 }}
+      />
     </div>
   );
 }
@@ -146,4 +175,4 @@ export function mapStateToProps(state: ReduxState) {
   return state;
 }
 
-export default withRouter(connect(mapStateToProps)(TopNavImpl));
+export default connect(mapStateToProps)(withRouteProps(TopNavImpl));

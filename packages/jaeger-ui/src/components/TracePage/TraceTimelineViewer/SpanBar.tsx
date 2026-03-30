@@ -1,35 +1,25 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
-import React from 'react';
-import { Popover } from 'antd';
+import React, { useState } from 'react';
+import { Popover, Tooltip } from 'antd';
 import _groupBy from 'lodash/groupBy';
-import { onlyUpdateForKeys, compose, withState, withProps } from 'recompose';
 
-import AccordianLogs from './SpanDetail/AccordianLogs';
+import AccordionEvents from './SpanDetail/AccordionEvents';
 
 import { ViewedBoundsFunctionType } from './utils';
 import { TNil } from '../../../types';
-import { Span } from '../../../types/trace';
+import { CriticalPathSection } from '../../../types/critical_path';
+import { IEvent, IOtelSpan } from '../../../types/otel';
 
 import './SpanBar.css';
 
-type TCommonProps = {
+type TSpanBarProps = {
   color: string;
   hintSide: string;
   // onClick: (evt: React.MouseEvent<any>) => void;
   onClick?: (evt: React.MouseEvent<any>) => void;
+  criticalPath: CriticalPathSection[];
   viewEnd: number;
   viewStart: number;
   getViewedBounds: ViewedBoundsFunctionType;
@@ -41,45 +31,93 @@ type TCommonProps = {
       }
     | TNil;
   traceStartTime: number;
-  span: Span;
-};
-
-type TInnerProps = {
-  label: string;
-  setLongLabel: () => void;
-  setShortLabel: () => void;
-} & TCommonProps;
-
-type TOuterProps = {
+  span: IOtelSpan;
   longLabel: string;
   shortLabel: string;
-} & TCommonProps;
+  traceDuration: number;
+  useOtelTerms: boolean;
+};
 
 function toPercent(value: number) {
   return `${(value * 100).toFixed(1)}%`;
 }
 
-function SpanBar(props: TInnerProps) {
+function toPercentInDecimal(value: number) {
+  return `${value * 100}%`;
+}
+
+function SpanBarCriticalPath(props: { criticalPathViewStart: number; criticalPathViewEnd: number }) {
+  const [shouldLoadTooltip, setShouldLoadTooltip] = useState(false);
+
+  const criticalPath = (
+    <div
+      data-testid="SpanBar--criticalPath"
+      className="SpanBar--criticalPath"
+      onMouseEnter={() => setShouldLoadTooltip(true)}
+      style={{
+        background: 'var(--critical-path-color)',
+        left: toPercentInDecimal(props.criticalPathViewStart),
+        width: toPercentInDecimal(props.criticalPathViewEnd - props.criticalPathViewStart),
+      }}
+    />
+  );
+
+  // Load tooltip only when hovering over critical path segment
+  // to reduce initial load time of trace page by ~300ms for 500 spans
+  if (shouldLoadTooltip) {
+    return (
+      <Tooltip
+        placement="top"
+        // defaultOpen is needed to show the tooltip when shouldLoadTooltip changes to true
+        defaultOpen
+        title={
+          <div>
+            A segment on the <em>critical path</em> of the overall trace/request/workflow.
+          </div>
+        }
+      >
+        {criticalPath}
+      </Tooltip>
+    );
+  }
+
+  return criticalPath;
+}
+
+function SpanBar(props: TSpanBarProps) {
   const {
+    criticalPath,
     viewEnd,
     viewStart,
     getViewedBounds,
     color,
-    label,
     hintSide,
     onClick,
-    setLongLabel,
-    setShortLabel,
     rpc,
     traceStartTime,
     span,
+    shortLabel,
+    longLabel,
+    traceDuration,
+    useOtelTerms,
   } = props;
-  // group logs based on timestamps
-  const logGroups = _groupBy(span.logs, log => {
-    const posPercent = getViewedBounds(log.timestamp, log.timestamp).start;
+
+  // group events based on timestamps
+  const eventGroups = _groupBy(span.events, (event: IEvent) => {
+    const posPercent = getViewedBounds(event.timestamp, event.timestamp).start;
     // round to the nearest 0.2%
     return toPercent(Math.round(posPercent * 500) / 500);
   });
+
+  const [label, setLabel] = useState(shortLabel);
+
+  const setShortLabel = () => {
+    setLabel(shortLabel);
+  };
+
+  const setLongLabel = () => {
+    setLabel(longLabel);
+  };
 
   return (
     <div
@@ -101,22 +139,29 @@ function SpanBar(props: TInnerProps) {
         <div className={`SpanBar--label is-${hintSide}`}>{label}</div>
       </div>
       <div>
-        {Object.keys(logGroups).map(positionKey => (
+        {Object.keys(eventGroups).map(positionKey => (
           <Popover
             key={positionKey}
-            arrowPointAtCenter
-            overlayClassName="SpanBar--logHint"
+            arrow={{ pointAtCenter: true }}
+            classNames={{ root: 'SpanBar--logHint' }}
             placement="topLeft"
             content={
-              <AccordianLogs
+              <AccordionEvents
                 interactive={false}
                 isOpen
-                logs={logGroups[positionKey]}
+                events={eventGroups[positionKey]}
                 timestamp={traceStartTime}
+                currentViewRangeTime={[0, 1]}
+                traceDuration={traceDuration}
+                useOtelTerms={useOtelTerms}
               />
             }
           >
-            <div className="SpanBar--logMarker" style={{ left: positionKey }} />
+            <div
+              data-testid="SpanBar--logMarker"
+              className="SpanBar--logMarker"
+              style={{ left: positionKey, zIndex: 3 }}
+            />
           </Popover>
         ))}
       </div>
@@ -130,25 +175,23 @@ function SpanBar(props: TInnerProps) {
           }}
         />
       )}
+      {criticalPath &&
+        criticalPath.map((each, index) => {
+          const critcalPathViewBounds = getViewedBounds(each.sectionStart, each.sectionEnd);
+          const criticalPathViewStart = critcalPathViewBounds.start;
+          const criticalPathViewEnd = critcalPathViewBounds.end;
+          const key = `${each.spanID}-${index}`;
+
+          return (
+            <SpanBarCriticalPath
+              criticalPathViewStart={criticalPathViewStart}
+              criticalPathViewEnd={criticalPathViewEnd}
+              key={key}
+            />
+          );
+        })}
     </div>
   );
 }
 
-export default compose<TInnerProps, TOuterProps>(
-  withState('label', 'setLabel', (props: { shortLabel: string }) => props.shortLabel),
-  withProps(
-    ({
-      setLabel,
-      shortLabel,
-      longLabel,
-    }: {
-      setLabel: (label: string) => void;
-      shortLabel: string;
-      longLabel: string;
-    }) => ({
-      setLongLabel: () => setLabel(longLabel),
-      setShortLabel: () => setLabel(shortLabel),
-    })
-  ),
-  onlyUpdateForKeys(['label', 'rpc', 'viewStart', 'viewEnd'])
-)(SpanBar);
+export default SpanBar;

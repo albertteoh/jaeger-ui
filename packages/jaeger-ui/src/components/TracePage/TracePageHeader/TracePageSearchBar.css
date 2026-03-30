@@ -1,17 +1,6 @@
 /*
 Copyright (c) 2018 Uber Technologies, Inc.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: Apache-2.0
 */
 
 .TracePageSearchBar {
@@ -29,17 +18,63 @@ limitations under the License.
 
 .TracePageSearchBar--count {
   opacity: 0.6;
+  color: var(--text-secondary);
 }
 
 .TracePageSearchBar--btn {
-  border-left: none;
+  background-color: var(--surface-primary);
+  border-left: 1px solid var(--border-default);
+  color: var(--text-secondary);
   transition: 0.2s;
 }
 
-.TracePageSearchBar--btn.is-disabled {
-  opacity: 0.5;
+.TracePageSearchBar--btn:hover:not(:disabled) {
+  background-color: var(--surface-secondary);
+  color: var(--text-primary);
 }
 
-.TracePageSearchBar--locateBtn {
-  padding: 1px 8px 4px;
+.TracePageSearchBar--btn.is-disabled,
+.TracePageSearchBar--btn:disabled {
+  opacity: 0.5;
+  background-color: var(--surface-primary) !important;
+  color: var(--text-muted) !important;
+  border-color: var(--border-strong) !important;
+}
+
+.ant-input-group.ant-input-group-compact .help-btn-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-default);
+  background-color: var(--surface-primary);
+}
+
+.help-btn-container:hover {
+  border-color: var(--interactive-primary);
+}
+
+.help-button {
+  border: 1px solid var(--border-strong);
+  border-radius: 100px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 1px;
+  margin: 0 10px;
+  font-size: 18px;
+}
+
+.ant-input-group.ant-input-group-compact .TracePageSearchBar--locateBtn,
+.ant-input-group.ant-input-group-compact .TracePageSearchBar--ButtonUp,
+.ant-input-group.ant-input-group-compact .TracePageSearchBar--ButtonDown,
+.ant-input-group.ant-input-group-compact .TracePageSearchBar--ButtonClose {
+  display: flex;
+  align-items: center;
+}
+
+.ant-input-group.ant-input-group-compact .TracePageSearchBar--locateBtn svg,
+.ant-input-group.ant-input-group-compact .TracePageSearchBar--ButtonUp svg,
+.ant-input-group.ant-input-group-compact .TracePageSearchBar--ButtonDown svg,
+.ant-input-group.ant-input-group-compact .TracePageSearchBar--ButtonClose svg {
+  color: inherit;
+  font-size: 18px;
 }

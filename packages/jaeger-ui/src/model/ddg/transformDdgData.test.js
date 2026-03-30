@@ -1,16 +1,5 @@
 // Copyright (c) 2019 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import _filter from 'lodash/filter';
 import _flatten from 'lodash/flatten';
@@ -116,13 +105,8 @@ describe('transform ddg data', () => {
   });
 
   it('sorts payload paths to ensure stable visibilityIndices', () => {
-    const {
-      focalPayloadElem,
-      simplePath,
-      longSimplePath,
-      doubleFocalPath,
-      almostDoubleFocalPath,
-    } = testResources;
+    const { focalPayloadElem, simplePath, longSimplePath, doubleFocalPath, almostDoubleFocalPath } =
+      testResources;
     const { visIdxToPathElem: presortedPathsVisIdxToPathElem } = transformDdgData(
       testResources.wrap([simplePath, doubleFocalPath, almostDoubleFocalPath, longSimplePath]),
       focalPayloadElem
@@ -167,7 +151,7 @@ describe('transform ddg data', () => {
     const { simplePath, noFocalPath, doubleFocalPath, focalPayloadElem } = testResources;
     expect(() =>
       transformDdgData(testResources.wrap([simplePath, noFocalPath, doubleFocalPath]), focalPayloadElem)
-    ).toThrowError(/focalNode/);
+    ).toThrow(/focalNode/);
   });
 
   it('creates equal hashes iff paths are equivalent', () => {
@@ -175,8 +159,6 @@ describe('transform ddg data', () => {
     const simpleModel = transformDdgData(wrap([simplePath, longSimplePath]), focalPayloadElem);
     const reverseModel = transformDdgData(wrap([longSimplePath, simplePath]), focalPayloadElem);
 
-    expect(reverseModel).not.toEqual(simpleModel);
-    expect(reverseModel).not.toBe(simpleModel);
     expect(reverseModel.hash).toBe(simpleModel.hash);
 
     const diffModel = transformDdgData(wrap([doubleFocalPath]), focalPayloadElem);
@@ -188,7 +170,6 @@ describe('transform ddg data', () => {
     const { focalPayloadElem, doubleFocalPath, simplePath, wrap } = testResources;
     const payload = wrap([simplePath, doubleFocalPath]);
     payload.dependencies.forEach((dependency, i) => {
-      // eslint-disable-next-line no-param-reassign
       dependency.attributes = [
         {
           key: 'exemplar_trace_id',

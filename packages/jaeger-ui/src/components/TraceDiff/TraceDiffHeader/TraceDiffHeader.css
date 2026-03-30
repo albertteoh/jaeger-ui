@@ -1,47 +1,94 @@
 /*
 Copyright (c) 2018 Uber Technologies, Inc.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+SPDX-License-Identifier: Apache-2.0
 */
 
-.TraecDiffHeader {
-  background: #fff;
-  border-bottom: 1px solid #d8d8d8;
-  box-shadow: 0 2px 5px 0px rgba(0, 0, 0, 0.35);
+.TraceDiffHeader {
+  background: var(--surface-primary);
+  border-bottom: 1px solid var(--border-default);
+  box-shadow: var(--shadow-sm);
   display: flex;
   flex: 0;
   position: relative;
   z-index: 1;
+  align-items: stretch;
 }
 
-.TraecDiffHeader--labelItem,
-.TraecDiffHeader--labelItem-darkened {
-  align-items: center;
-  border-right: 1px solid #d8d8d8;
+.TraceDiffHeader--labelItem {
   display: flex;
-  padding: 0 1.25rem;
+  align-items: center;
+  justify-content: center;
+  width: 50px;
+  background: var(--surface-tertiary);
+  border-right: 1px solid var(--border-default);
 }
 
-.TraecDiffHeader--labelItem-darkened {
-  background: #eee;
+.TraceDiffHeader--label {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
-/* Unfortunate but necessary */
+.TraceDiffHeader--traceSection {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.TraceDiffHeader--traceSection:hover {
+  background-color: var(--surface-component-background-hover);
+}
+
+.TraceDiffHeader--divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 15px;
+  background: var(--surface-tertiary);
+  border-right: 1px solid var(--border-default);
+  border-left: 1px solid var(--border-default);
+}
+
+.TraceDiffHeader--vsContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--interactive-primary);
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.TraceDiffHeader--vsContainer:hover {
+  transform: scale(1.05);
+  box-shadow: var(--shadow-md);
+}
+
+.TraceDiffHeader--vsLabel {
+  font-size: 14px;
+  font-weight: 700;
+  color: white;
+  letter-spacing: 1px;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
+}
 
 .TraceDiffHeader--popover .ant-popover-title {
-  padding: 0.25rem;
+  padding: 10px;
+  border-bottom: 1px solid var(--border-default);
 }
 
 .TraceDiffHeader--popover .ant-popover-inner-content {
   padding: 0;
+}
+
+.TraceDiffHeader--popover .ant-popover-inner {
+  border-radius: 4px;
+  box-shadow: var(--shadow-lg);
 }

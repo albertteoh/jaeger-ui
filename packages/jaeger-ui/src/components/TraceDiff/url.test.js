@@ -1,20 +1,13 @@
 // Copyright (c) 2019 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
-import * as reactRouterDom from 'react-router-dom';
+import * as reactRouterDomCompat from 'react-router-dom';
 
 import { ROUTE_PATH, matches, getUrl } from './url';
+
+jest.mock('react-router-dom', () => ({
+  matchPath: jest.fn(),
+}));
 
 describe('TraceDiff/url', () => {
   describe('matches', () => {
@@ -22,23 +15,27 @@ describe('TraceDiff/url', () => {
     let matchPathSpy;
 
     beforeAll(() => {
-      matchPathSpy = jest.spyOn(reactRouterDom, 'matchPath');
+      matchPathSpy = jest.spyOn(reactRouterDomCompat, 'matchPath');
     });
 
-    it('calls matchPath with expected arguments', () => {
+    it('calls matchPath with ROUTE_PATH and pathname', () => {
       matches(path);
-      expect(matchPathSpy).toHaveBeenLastCalledWith(path, {
-        path: ROUTE_PATH,
-        strict: true,
-        exact: true,
-      });
+      expect(matchPathSpy).toHaveBeenLastCalledWith(ROUTE_PATH, path);
     });
 
-    it("returns truthiness of matchPath's return value", () => {
+    it('returns false when matchPath returns null', () => {
       matchPathSpy.mockReturnValueOnce(null);
-      expect(matches(path)).toBe(false);
-      matchPathSpy.mockReturnValueOnce({});
-      expect(matches(path)).toBe(true);
+      expect(matches('/trace/abc...def')).toBe(false);
+    });
+
+    it('returns false when path matches /trace/:id but is not a compare URL (no ...)', () => {
+      matchPathSpy.mockReturnValueOnce({ params: { id: 'abc123' } });
+      expect(matches('/trace/abc123')).toBe(false);
+    });
+
+    it('returns true when matchPath matches and path is a compare URL (contains ...)', () => {
+      matchPathSpy.mockReturnValueOnce({ params: { id: 'a...b' } });
+      expect(matches('/trace/a...b')).toBe(true);
     });
   });
 

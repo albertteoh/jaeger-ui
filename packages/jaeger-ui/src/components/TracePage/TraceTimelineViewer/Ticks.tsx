@@ -1,41 +1,29 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import * as React from 'react';
 
-import { formatDuration } from './utils';
+import { formatDuration } from '../../../utils/date';
 import { TNil } from '../../../types';
+import { IOtelSpan } from '../../../types/otel';
 
 import './Ticks.css';
 
 type TicksProps = {
-  endTime?: number | TNil;
   numTicks: number;
   showLabels?: boolean | TNil;
-  startTime?: number | TNil;
+  startTime?: IOtelSpan['startTime'] | TNil;
+  endTime?: IOtelSpan['endTime'] | TNil;
 };
 
-export default function Ticks(props: TicksProps) {
-  const { endTime, numTicks, showLabels, startTime } = props;
-
+export default function Ticks({ endTime = null, numTicks, showLabels = null, startTime = null }: TicksProps) {
   let labels: undefined | string[];
   if (showLabels) {
     labels = [];
     const viewingDuration = (endTime || 0) - (startTime || 0);
     for (let i = 0; i < numTicks; i++) {
       const durationAtTick = (startTime || 0) + (i / (numTicks - 1)) * viewingDuration;
-      labels.push(formatDuration(durationAtTick));
+      labels.push(formatDuration(durationAtTick as IOtelSpan['duration']));
     }
   }
   const ticks: React.ReactNode[] = [];
@@ -57,9 +45,3 @@ export default function Ticks(props: TicksProps) {
   }
   return <div className="Ticks">{ticks}</div>;
 }
-
-Ticks.defaultProps = {
-  endTime: null,
-  showLabels: null,
-  startTime: null,
-};

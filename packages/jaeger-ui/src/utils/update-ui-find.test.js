@@ -1,16 +1,5 @@
 // Copyright (c) 2019 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import queryString from 'query-string';
 
@@ -22,7 +11,7 @@ describe('updateUiFind', () => {
   const unrelatedQueryParamName = 'unrelatedQueryParamName';
   const unrelatedQueryParamValue = 'unrelatedQueryParamValue';
 
-  const replaceMock = jest.fn();
+  const navigate = jest.fn();
   const queryStringParseSpy = jest.spyOn(queryString, 'parse').mockReturnValue({
     uiFind: existingUiFind,
     [unrelatedQueryParamName]: unrelatedQueryParamValue,
@@ -32,27 +21,24 @@ describe('updateUiFind', () => {
     .spyOn(queryString, 'stringify')
     .mockReturnValue(queryStringStringifySpyMockReturnValue);
 
-  const history = {
-    replace: replaceMock,
-  };
   const location = {
     pathname: '/trace/traceID',
     search: 'location.search',
   };
-  const expectedReplaceMockArgument = {
-    ...location,
+  const expectedNavigateArg = {
+    pathname: location.pathname,
     search: `?${queryStringStringifySpyMockReturnValue}`,
   };
 
   beforeEach(() => {
-    replaceMock.mockReset();
+    navigate.mockReset();
     queryStringParseSpy.mockClear();
     queryStringStringifySpy.mockClear();
   });
 
   it('adds truthy graphSearch to existing params', () => {
     updateUiFind({
-      history,
+      navigate,
       location,
       uiFind: newUiFind,
     });
@@ -61,12 +47,12 @@ describe('updateUiFind', () => {
       uiFind: newUiFind,
       [unrelatedQueryParamName]: unrelatedQueryParamValue,
     });
-    expect(replaceMock).toHaveBeenCalledWith(expectedReplaceMockArgument);
+    expect(navigate).toHaveBeenCalledWith(expectedNavigateArg, { replace: true });
   });
 
   it('omits falsy graphSearch from query params', () => {
     updateUiFind({
-      history,
+      navigate,
       location,
       uiFind: '',
     });
@@ -74,19 +60,19 @@ describe('updateUiFind', () => {
     expect(queryStringStringifySpy).toHaveBeenCalledWith({
       [unrelatedQueryParamName]: unrelatedQueryParamValue,
     });
-    expect(replaceMock).toHaveBeenCalledWith(expectedReplaceMockArgument);
+    expect(navigate).toHaveBeenCalledWith(expectedNavigateArg, { replace: true });
   });
 
   it('omits absent graphSearch from query params', () => {
     updateUiFind({
-      history,
+      navigate,
       location,
     });
     expect(queryStringParseSpy).toHaveBeenCalledWith(location.search);
     expect(queryStringStringifySpy).toHaveBeenCalledWith({
       [unrelatedQueryParamName]: unrelatedQueryParamValue,
     });
-    expect(replaceMock).toHaveBeenCalledWith(expectedReplaceMockArgument);
+    expect(navigate).toHaveBeenCalledWith(expectedNavigateArg, { replace: true });
   });
 
   describe('trackFindFunction provided', () => {
@@ -98,7 +84,7 @@ describe('updateUiFind', () => {
 
     it('tracks undefined when uiFind value is omitted', () => {
       updateUiFind({
-        history,
+        navigate,
         location,
         trackFindFunction,
       });
@@ -107,7 +93,7 @@ describe('updateUiFind', () => {
 
     it('tracks given value', () => {
       updateUiFind({
-        history,
+        navigate,
         location,
         trackFindFunction,
         uiFind: newUiFind,

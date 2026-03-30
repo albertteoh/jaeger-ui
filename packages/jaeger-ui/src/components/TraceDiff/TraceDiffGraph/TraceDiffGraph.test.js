@@ -1,175 +1,265 @@
 // Copyright (c) 2019 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
-import * as React from 'react';
-import { shallow } from 'enzyme';
+import React from 'react';
+import { render, screen, cleanup } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import '@testing-library/jest-dom';
 
+import TraceDiffGraphDefault from './TraceDiffGraph';
 import { UnconnectedTraceDiffGraph as TraceDiffGraph } from './TraceDiffGraph';
-import ErrorMessage from '../../common/ErrorMessage';
-import LoadingIndicator from '../../common/LoadingIndicator';
-import UiFindInput from '../../common/UiFindInput';
 import { fetchedState } from '../../../constants';
+import * as getConfig from '../../../utils/config/get-config';
+import transformTraceData from '../../../model/transform-trace-data';
+
+jest.mock('../../common/UiFindInput', () => ({
+  __esModule: true,
+  default: props => (
+    <div data-testid="ui-find-input" {...props.inputProps}>
+      UiFindInput {props.inputProps?.suffix}
+    </div>
+  ),
+  parseUiFind: jest.requireActual('../../common/UiFindInput').parseUiFind,
+  extractUiFindFromState: jest.requireActual('../../common/UiFindInput').extractUiFindFromState,
+}));
+jest.mock('../../common/ErrorMessage', () => props => <div data-testid="error-message">{props.error}</div>);
+jest.mock('../../common/LoadingIndicator', () => () => <div data-testid="loading-indicator">Loading...</div>);
+
+afterEach(cleanup);
+
+const renderWithRouter = component => {
+  return render(<MemoryRouter>{component}</MemoryRouter>);
+};
 
 describe('TraceDiffGraph', () => {
-  const props = {
-    a: {
-      data: {
-        spans: [],
-        traceID: 'trace-id-a',
+  // Create proper legacy trace fixtures
+  const traceFixtureA = {
+    traceID: 'trace-id-a',
+    spans: [],
+    processes: {
+      p1: {
+        serviceName: 'service-a',
+        tags: [],
       },
+    },
+  };
+
+  const traceFixtureB = {
+    traceID: 'trace-id-b',
+    spans: [],
+    processes: {
+      p1: {
+        serviceName: 'service-b',
+        tags: [],
+      },
+    },
+  };
+
+  const baseProps = {
+    a: {
+      data: transformTraceData(traceFixtureA),
       error: null,
       id: 'trace-id-a',
       state: fetchedState.DONE,
     },
     b: {
-      data: {
-        spans: [],
-        traceID: 'trace-id-b',
-      },
+      data: transformTraceData(traceFixtureB),
       error: null,
       id: 'trace-id-b',
       state: fetchedState.DONE,
     },
+    uiFind: '',
   };
-  let wrapper;
+
+  let getConfigValueSpy;
+  let windowOpenSpy;
 
   beforeEach(() => {
-    wrapper = shallow(<TraceDiffGraph {...props} />);
+    getConfigValueSpy = jest.spyOn(getConfig, 'default');
+    windowOpenSpy = jest.spyOn(window, 'open').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it('renders warning when a or b are not provided', () => {
-    expect(wrapper.find('h1').length).toBe(0);
+    const { rerender } = renderWithRouter(<TraceDiffGraph {...baseProps} />);
+    expect(screen.queryByText('At least two Traces are needed')).not.toBeInTheDocument();
 
-    wrapper.setProps({ a: undefined });
-    expect(wrapper.find('h1').length).toBe(1);
-    expect(wrapper.find('h1').text()).toBe('At least two Traces are needed');
+    rerender(
+      <MemoryRouter>
+        <TraceDiffGraph {...baseProps} a={undefined} />
+      </MemoryRouter>
+    );
+    expect(screen.getByText('At least two Traces are needed')).toBeInTheDocument();
 
-    wrapper.setProps({ b: undefined });
-    expect(wrapper.find('h1').length).toBe(1);
-    expect(wrapper.find('h1').text()).toBe('At least two Traces are needed');
-
-    wrapper.setProps({ a: props.a });
-    expect(wrapper.find('h1').length).toBe(1);
-    expect(wrapper.find('h1').text()).toBe('At least two Traces are needed');
+    rerender(
+      <MemoryRouter>
+        <TraceDiffGraph {...baseProps} b={undefined} />
+      </MemoryRouter>
+    );
+    expect(screen.getByText('At least two Traces are needed')).toBeInTheDocument();
   });
 
-  it('renders warning when a or b have errored', () => {
-    expect(wrapper.find(ErrorMessage).length).toBe(0);
+  it('renders error message when a or b have errors', () => {
+    const { rerender } = renderWithRouter(<TraceDiffGraph {...baseProps} />);
 
-    const errorA = 'some error text for trace a';
-    wrapper.setProps({
-      a: {
-        ...props.a,
-        error: errorA,
+    expect(screen.queryAllByTestId('error-message')).toHaveLength(0);
+
+    const errorA = 'trace a error';
+    rerender(
+      <MemoryRouter>
+        <TraceDiffGraph {...baseProps} a={{ ...baseProps.a, error: errorA }} />
+      </MemoryRouter>
+    );
+    expect(screen.getAllByTestId('error-message')).toHaveLength(1);
+    expect(screen.getByText(errorA)).toBeInTheDocument();
+
+    const errorB = 'trace b error';
+    rerender(
+      <MemoryRouter>
+        <TraceDiffGraph
+          {...baseProps}
+          a={{ ...baseProps.a, error: errorA }}
+          b={{ ...baseProps.b, error: errorB }}
+        />
+      </MemoryRouter>
+    );
+    expect(screen.getAllByTestId('error-message')).toHaveLength(2);
+    expect(screen.getByText(errorB)).toBeInTheDocument();
+  });
+
+  it('shows loading when a or b are loading', () => {
+    const { rerender } = renderWithRouter(
+      <TraceDiffGraph {...baseProps} a={{ ...baseProps.a, state: fetchedState.LOADING }} />
+    );
+    expect(screen.getByTestId('loading-indicator')).toBeInTheDocument();
+
+    rerender(
+      <MemoryRouter>
+        <TraceDiffGraph {...baseProps} b={{ ...baseProps.b, state: fetchedState.LOADING }} />
+      </MemoryRouter>
+    );
+    expect(screen.getByTestId('loading-indicator')).toBeInTheDocument();
+  });
+
+  it('renders an empty graph wrapper when data is missing', () => {
+    const { container, rerender } = renderWithRouter(
+      <TraceDiffGraph {...baseProps} a={{ ...baseProps.a, data: undefined }} />
+    );
+    expect(container.querySelector('.TraceDiffGraph--graphWrapper').innerHTML).toBe('');
+
+    rerender(
+      <MemoryRouter>
+        <TraceDiffGraph {...baseProps} b={{ ...baseProps.b, data: undefined }} />
+      </MemoryRouter>
+    );
+    expect(container.querySelector('.TraceDiffGraph--graphWrapper').innerHTML).toBe('');
+  });
+
+  it('renders graph when data is present', () => {
+    const { container } = renderWithRouter(<TraceDiffGraph {...baseProps} />);
+    const graphWrapper = container.querySelector('.TraceDiffGraph--graphWrapper');
+    const dag = container.querySelector('.TraceDiffGraph--dag');
+    const minimap = container.querySelector('.u-miniMap');
+
+    expect(graphWrapper).toBeInTheDocument();
+    expect(dag).toBeInTheDocument();
+    expect(minimap).toBeInTheDocument();
+  });
+
+  it('renders uiFind input with count suffix', () => {
+    const { getByTestId, rerender } = renderWithRouter(<TraceDiffGraph {...baseProps} />);
+    expect(getByTestId('ui-find-input')).not.toHaveAttribute('suffix');
+
+    rerender(
+      <MemoryRouter>
+        <TraceDiffGraph {...baseProps} uiFind="test uiFind" />
+      </MemoryRouter>
+    );
+    expect(getByTestId('ui-find-input')).toHaveAttribute('suffix', '0');
+  });
+
+  it('shows match count when uiFind matches span data', () => {
+    const traceWithSpan = {
+      traceID: 't-id',
+      spans: [
+        {
+          traceID: 't-id',
+          spanID: 'abc123',
+          flags: 1,
+          operationName: 'GET /api',
+          startTime: 1542666452979000,
+          duration: 10000,
+          references: [],
+          tags: [],
+          logs: [],
+          processID: 'p1',
+          warnings: null,
+        },
+      ],
+      processes: {
+        p1: {
+          serviceName: 'svc',
+          tags: [],
+        },
       },
-    });
+    };
 
-    expect(wrapper.find(ErrorMessage).length).toBe(1);
-    expect(wrapper.find(ErrorMessage).props()).toEqual(
-      expect.objectContaining({
-        error: errorA,
-      })
-    );
-    const errorB = 'some error text for trace a';
-    wrapper.setProps({
-      b: {
-        ...props.b,
-        error: errorB,
-      },
-    });
+    const matchedTrace = {
+      data: transformTraceData(traceWithSpan),
+      error: null,
+      id: 't-id',
+      state: fetchedState.DONE,
+    };
 
-    expect(wrapper.find(ErrorMessage).length).toBe(2);
-    expect(
-      wrapper
-        .find(ErrorMessage)
-        .at(1)
-        .props()
-    ).toEqual(
-      expect.objectContaining({
-        error: errorB,
-      })
-    );
-    wrapper.setProps({
-      a: props.a,
-    });
-    expect(wrapper.find(ErrorMessage).length).toBe(1);
-    expect(wrapper.find(ErrorMessage).props()).toEqual(
-      expect.objectContaining({
-        error: errorB,
-      })
-    );
+    renderWithRouter(<TraceDiffGraph a={matchedTrace} b={matchedTrace} uiFind="GET" />);
+    expect(screen.getByTestId('ui-find-input')).toHaveAttribute('suffix', '1');
   });
 
-  it('renders a loading indicator when a or b are loading', () => {
-    expect(wrapper.find(LoadingIndicator).length).toBe(0);
-
-    wrapper.setProps({
-      a: {
-        state: fetchedState.LOADING,
-      },
+  describe('default export (TraceDiffGraph wrapper)', () => {
+    it('derives uiFind from the URL search params and passes it to the graph', () => {
+      render(
+        <MemoryRouter initialEntries={['/?uiFind=service-a']}>
+          <TraceDiffGraphDefault a={baseProps.a} b={baseProps.b} />
+        </MemoryRouter>
+      );
+      // suffix is '0' (match count string) because uiFind is non-empty but fixture has no spans to match
+      expect(screen.getByTestId('ui-find-input')).toHaveAttribute('suffix', '0');
     });
-    expect(wrapper.find(LoadingIndicator).length).toBe(1);
 
-    wrapper.setProps({
-      b: {
-        state: fetchedState.LOADING,
-      },
+    it('does not set suffix when URL has no uiFind param', () => {
+      render(
+        <MemoryRouter initialEntries={['/']}>
+          <TraceDiffGraphDefault a={baseProps.a} b={baseProps.b} />
+        </MemoryRouter>
+      );
+      expect(screen.getByTestId('ui-find-input')).not.toHaveAttribute('suffix');
     });
-    expect(wrapper.find(LoadingIndicator).length).toBe(1);
-
-    wrapper.setProps({ a: props.a });
-    expect(wrapper.find(LoadingIndicator).length).toBe(1);
   });
 
-  it('renders an empty div when a or b lack data', () => {
-    expect(wrapper.children().length).not.toBe(0);
+  describe('empty state help button', () => {
+    it('opens help link when config value exists', () => {
+      const helpLink = 'https://example.com/help';
 
-    const { data: unusedAData, ...aWithoutData } = props.a;
-    wrapper.setProps({ a: aWithoutData });
-    expect(wrapper.children().length).toBe(0);
+      getConfigValueSpy.mockReturnValue({ traceDiff: { helpLink } });
 
-    const { data: unusedBData, ...bWithoutData } = props.b;
-    wrapper.setProps({ b: bWithoutData });
-    expect(wrapper.children().length).toBe(0);
+      const { getByTestId } = renderWithRouter(<TraceDiffGraph {...baseProps} a={undefined} b={undefined} />);
+      const helpButton = getByTestId('learn-how-button');
+      helpButton.click();
 
-    wrapper.setProps({ a: props.a });
-    expect(wrapper.children().length).toBe(0);
-  });
+      expect(windowOpenSpy).toHaveBeenCalledWith(helpLink, expect.any(String));
+    });
 
-  it('renders a DiGraph when it has data', () => {
-    expect(wrapper).toMatchSnapshot();
-  });
+    it('does not open window when help link config is not set', () => {
+      getConfigValueSpy.mockReturnValue({});
 
-  it('renders current uiFind count when given uiFind', () => {
-    expect(wrapper.find(UiFindInput).prop('inputProps')).toEqual(
-      expect.objectContaining({
-        suffix: undefined,
-      })
-    );
+      const { getByTestId } = renderWithRouter(<TraceDiffGraph {...baseProps} a={undefined} b={undefined} />);
+      const helpButton = getByTestId('learn-how-button');
+      helpButton.click();
 
-    wrapper.setProps({ uiFind: 'test uiFind' });
-
-    expect(wrapper.find(UiFindInput).prop('inputProps')).toEqual(
-      expect.objectContaining({
-        suffix: '0',
-      })
-    );
-  });
-
-  it('cleans up layoutManager before unmounting', () => {
-    const layoutManager = jest.spyOn(wrapper.instance().layoutManager, 'stopAndRelease');
-    wrapper.unmount();
-    expect(layoutManager).toHaveBeenCalledTimes(1);
+      expect(windowOpenSpy).not.toHaveBeenCalled();
+    });
   });
 });

@@ -1,19 +1,8 @@
 // Copyright (c) 2019 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import calcPositioning, { _initSvcSpan, _initOpSpan } from './calc-positioning';
-import { FONT_SIZE, LINE_HEIGHT, OP_PADDING_TOP } from './constants';
+import { FONT_SIZE, LINE_HEIGHT, OP_PADDING_TOP, WORD_RX } from './constants';
 
 describe('initializing measuring spans', () => {
   afterEach(() => {
@@ -236,6 +225,34 @@ describe('calcPositioning', () => {
       calcPositioning(secondService, operation);
       expect(measureSvc).toHaveBeenCalledTimes(5);
       expect(measureOp).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('security', () => {
+    it('treats input strings containing HTML tags as plain text', () => {
+      const svcSpan = _initSvcSpan();
+      const xssString = '<img src=x onerror=alert(1)>';
+      const wordCount = xssString.match(WORD_RX)?.length || 1;
+      const capturedHtml = [];
+      const originalImplementation = measureSvc.getMockImplementation();
+      svcMeasurements = genWidths(new Array(wordCount).fill(1));
+
+      measureSvc.mockImplementation(() => {
+        capturedHtml.push(svcSpan.innerHTML);
+        return originalImplementation();
+      });
+
+      try {
+        calcPositioning(xssString);
+      } finally {
+        measureSvc.mockImplementation(originalImplementation);
+      }
+
+      expect(capturedHtml).toHaveLength(wordCount);
+      capturedHtml.forEach(html => {
+        expect(html).not.toContain('<img');
+      });
+      expect(capturedHtml.some(html => html.includes('&lt;img'))).toBe(true);
     });
   });
 });

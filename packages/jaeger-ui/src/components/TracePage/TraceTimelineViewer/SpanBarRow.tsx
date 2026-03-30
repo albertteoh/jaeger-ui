@@ -1,22 +1,8 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
-import * as React from 'react';
-import IoAlert from 'react-icons/lib/io/alert';
-import IoArrowRightA from 'react-icons/lib/io/arrow-right-a';
-import IoNetwork from 'react-icons/lib/io/network';
-import MdFileUpload from 'react-icons/lib/md/file-upload';
+import React, { useCallback } from 'react';
+import { IoAlert, IoGitNetwork, IoCloudUploadOutline, IoArrowForward } from 'react-icons/io5';
 import ReferencesButton from './ReferencesButton';
 import TimelineRow from './TimelineRow';
 import { formatDuration, ViewedBoundsFunctionType } from './utils';
@@ -25,17 +11,21 @@ import SpanBar from './SpanBar';
 import Ticks from './Ticks';
 
 import { TNil } from '../../../types';
-import { Span } from '../../../types/trace';
+import { CriticalPathSection } from '../../../types/critical_path';
+import { IOtelSpan } from '../../../types/otel';
 
 import './SpanBarRow.css';
 
 type SpanBarRowProps = {
   className?: string;
   color: string;
-  columnDivision: number;
+  criticalPath: CriticalPathSection[];
+  nameColumnWidth: number;
   isChildrenExpanded: boolean;
   isDetailExpanded: boolean;
   isMatchingFilter: boolean;
+  isSelected?: boolean;
+  timelineBarsVisible: boolean;
   onDetailToggled: (spanID: string) => void;
   onChildrenToggled: (spanID: string) => void;
   numTicks: number;
@@ -54,11 +44,14 @@ type SpanBarRowProps = {
         serviceName: string;
       }
     | TNil;
-  showErrorIcon: boolean;
+  hasOwnError: boolean;
+  hasChildError: boolean;
   getViewedBounds: ViewedBoundsFunctionType;
   traceStartTime: number;
-  span: Span;
+  span: IOtelSpan;
   focusSpan: (spanID: string) => void;
+  traceDuration: number;
+  useOtelTerms: boolean;
 };
 
 /**
@@ -69,138 +62,152 @@ type SpanBarRowProps = {
  * handlers to the onClick props. E.g. for now, the PureComponent is more
  * performance than the stateless function.
  */
-export default class SpanBarRow extends React.PureComponent<SpanBarRowProps> {
-  static defaultProps = {
-    className: '',
-    rpc: null,
-  };
+const SpanBarRow: React.FC<SpanBarRowProps> = ({
+  className = '',
+  color,
+  criticalPath,
+  nameColumnWidth,
+  isChildrenExpanded,
+  isDetailExpanded,
+  isMatchingFilter,
+  isSelected,
+  timelineBarsVisible,
+  numTicks,
+  rpc = null,
+  noInstrumentedServer,
+  hasOwnError,
+  hasChildError,
+  getViewedBounds,
+  traceStartTime,
+  span,
+  focusSpan,
+  traceDuration,
+  onDetailToggled,
+  onChildrenToggled,
+  useOtelTerms,
+}) => {
+  const _detailToggle = useCallback(() => {
+    onDetailToggled(span.spanID);
+  }, [onDetailToggled, span.spanID]);
 
-  _detailToggle = () => {
-    this.props.onDetailToggled(this.props.span.spanID);
-  };
+  const _childrenToggle = useCallback(() => {
+    onChildrenToggled(span.spanID);
+  }, [onChildrenToggled, span.spanID]);
 
-  _childrenToggle = () => {
-    this.props.onChildrenToggled(this.props.span.spanID);
-  };
+  const {
+    duration,
+    hasChildren: isParent,
+    name: operationName,
+    resource: { serviceName },
+  } = span;
+  const label = formatDuration(duration);
+  const viewBounds = getViewedBounds(span.startTime, span.endTime);
+  const viewStart = viewBounds.start;
+  const viewEnd = viewBounds.end;
 
-  render() {
-    const {
-      className,
-      color,
-      columnDivision,
-      isChildrenExpanded,
-      isDetailExpanded,
-      isMatchingFilter,
-      numTicks,
-      rpc,
-      noInstrumentedServer,
-      showErrorIcon,
-      getViewedBounds,
-      traceStartTime,
-      span,
-      focusSpan,
-    } = this.props;
-    const {
-      duration,
-      hasChildren: isParent,
-      operationName,
-      process: { serviceName },
-    } = span;
-    const label = formatDuration(duration);
-    const viewBounds = getViewedBounds(span.startTime, span.startTime + span.duration);
-    const viewStart = viewBounds.start;
-    const viewEnd = viewBounds.end;
+  const labelDetail = `${serviceName}::${operationName}`;
+  let longLabel;
+  let hintSide;
+  if (viewStart > 1 - viewEnd) {
+    longLabel = `${labelDetail} | ${label}`;
+    hintSide = 'left';
+  } else {
+    longLabel = `${label} | ${labelDetail}`;
+    hintSide = 'right';
+  }
 
-    const labelDetail = `${serviceName}::${operationName}`;
-    let longLabel;
-    let hintSide;
-    if (viewStart > 1 - viewEnd) {
-      longLabel = `${labelDetail} | ${label}`;
-      hintSide = 'left';
-    } else {
-      longLabel = `${label} | ${labelDetail}`;
-      hintSide = 'right';
-    }
+  // In OTEL model, links are used for "related" spans (not parent spans).
+  // Show the references button if there's at least one link.
+  const hasLinks = span.links && span.links.length > 0;
+  const hasInboundLinks = span.inboundLinks && span.inboundLinks.length > 0;
 
-    return (
-      <TimelineRow
-        className={`
+  return (
+    <TimelineRow
+      className={`
           span-row
           ${className || ''}
           ${isDetailExpanded ? 'is-expanded' : ''}
           ${isMatchingFilter ? 'is-matching-filter' : ''}
+          ${isSelected ? 'is-selected' : ''}
         `}
-      >
-        <TimelineRow.Cell className="span-name-column" width={columnDivision}>
-          <div className={`span-name-wrapper ${isMatchingFilter ? 'is-matching-filter' : ''}`}>
-            <SpanTreeOffset
-              childrenVisible={isChildrenExpanded}
-              span={span}
-              onClick={isParent ? this._childrenToggle : undefined}
-            />
-            <a
-              className={`span-name ${isDetailExpanded ? 'is-detail-expanded' : ''}`}
-              aria-checked={isDetailExpanded}
-              onClick={this._detailToggle}
-              role="switch"
-              style={{ borderColor: color }}
-              tabIndex={0}
+    >
+      <TimelineRow.Cell className="span-name-column" width={nameColumnWidth}>
+        <div className={`span-name-wrapper ${isMatchingFilter ? 'is-matching-filter' : ''}`}>
+          <SpanTreeOffset
+            childrenVisible={isChildrenExpanded}
+            span={span}
+            onClick={isParent ? _childrenToggle : undefined}
+            color={color}
+          />
+          <a
+            className={`span-name ${isDetailExpanded ? 'is-detail-expanded' : ''}`}
+            aria-checked={isDetailExpanded}
+            onClick={_detailToggle}
+            role="switch"
+            style={{ borderColor: color }}
+            tabIndex={0}
+          >
+            <span
+              className={`span-svc-name ${isParent && !isChildrenExpanded ? 'is-children-collapsed' : ''}`}
             >
-              <span
-                className={`span-svc-name ${isParent && !isChildrenExpanded ? 'is-children-collapsed' : ''}`}
-              >
-                {showErrorIcon && <IoAlert className="SpanBarRow--errorIcon" />}
-                {serviceName}{' '}
-                {rpc && (
-                  <span>
-                    <IoArrowRightA />{' '}
-                    <i className="SpanBarRow--rpcColorMarker" style={{ background: rpc.color }} />
-                    {rpc.serviceName}
-                  </span>
-                )}
-                {noInstrumentedServer && (
-                  <span>
-                    <IoArrowRightA />{' '}
-                    <i
-                      className="SpanBarRow--rpcColorMarker"
-                      style={{ background: noInstrumentedServer.color }}
-                    />
-                    {noInstrumentedServer.serviceName}
-                  </span>
-                )}
-              </span>
-              <small className="endpoint-name">{rpc ? rpc.operationName : operationName}</small>
-            </a>
-            {span.references && span.references.length > 1 && (
-              <ReferencesButton
-                references={span.references}
-                tooltipText="Contains multiple references"
-                focusSpan={focusSpan}
-              >
-                <IoNetwork />
-              </ReferencesButton>
-            )}
-            {span.subsidiarilyReferencedBy && span.subsidiarilyReferencedBy.length > 0 && (
-              <ReferencesButton
-                references={span.subsidiarilyReferencedBy}
-                tooltipText={`This span is referenced by ${
-                  span.subsidiarilyReferencedBy.length === 1 ? 'another span' : 'multiple other spans'
-                }`}
-                focusSpan={focusSpan}
-              >
-                <MdFileUpload />
-              </ReferencesButton>
-            )}
-          </div>
-        </TimelineRow.Cell>
+              {hasOwnError && <IoAlert className="SpanBarRow--errorIcon" />}
+              {!hasOwnError && hasChildError && (
+                <IoAlert className="SpanBarRow--errorIcon SpanBarRow--errorIcon--hollow" />
+              )}
+              {serviceName}{' '}
+              {rpc && (
+                <span>
+                  <IoArrowForward className="SpanBarRow--arrowForwardIcon" />{' '}
+                  <i className="SpanBarRow--rpcColorMarker" style={{ background: rpc.color }} />
+                  {rpc.serviceName}
+                </span>
+              )}
+              {noInstrumentedServer && (
+                <span>
+                  <IoArrowForward className="SpanBarRow--arrowForwardIcon" />{' '}
+                  <i
+                    className="SpanBarRow--rpcColorMarker"
+                    style={{ background: noInstrumentedServer.color }}
+                  />
+                  {noInstrumentedServer.serviceName}
+                </span>
+              )}
+            </span>
+            <small className="endpoint-name">{rpc ? rpc.operationName : operationName}</small>
+          </a>
+          {hasLinks && (
+            <ReferencesButton
+              links={span.links}
+              tooltipText={useOtelTerms ? 'Contains multiple links' : 'Contains multiple references'}
+              focusSpan={focusSpan}
+            >
+              <IoGitNetwork />
+            </ReferencesButton>
+          )}
+          {hasInboundLinks && (
+            <ReferencesButton
+              links={span.inboundLinks}
+              tooltipText={
+                (useOtelTerms ? 'This span is linked from ' : 'This span is referenced by ') +
+                (span.inboundLinks.length === 1 ? 'another span' : 'multiple other spans')
+              }
+              focusSpan={focusSpan}
+            >
+              <IoCloudUploadOutline />
+            </ReferencesButton>
+          )}
+        </div>
+      </TimelineRow.Cell>
+      {timelineBarsVisible && (
         <TimelineRow.Cell
           className="span-view"
           style={{ cursor: 'pointer' }}
-          width={1 - columnDivision}
-          onClick={this._detailToggle}
+          width={1 - nameColumnWidth}
+          onClick={_detailToggle}
         >
           <Ticks numTicks={numTicks} />
           <SpanBar
+            criticalPath={criticalPath}
             rpc={rpc}
             viewStart={viewStart}
             viewEnd={viewEnd}
@@ -211,9 +218,13 @@ export default class SpanBarRow extends React.PureComponent<SpanBarRowProps> {
             hintSide={hintSide}
             traceStartTime={traceStartTime}
             span={span}
+            traceDuration={traceDuration}
+            useOtelTerms={useOtelTerms}
           />
         </TimelineRow.Cell>
-      </TimelineRow>
-    );
-  }
-}
+      )}
+    </TimelineRow>
+  );
+};
+
+export default React.memo(SpanBarRow);

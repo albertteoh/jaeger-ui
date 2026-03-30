@@ -1,16 +1,5 @@
 // Copyright (c) 2019 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import filterSpans from './filter-spans';
 
@@ -31,6 +20,10 @@ describe('filterSpans', () => {
           key: 'processTagKey1',
           value: 'processTagValue1',
         },
+        {
+          key: 'processTagKey3',
+          value: 'processTagValue3',
+        },
       ],
     },
     tags: [
@@ -41,6 +34,10 @@ describe('filterSpans', () => {
       {
         key: 'tagKey1',
         value: 'tagValue1',
+      },
+      {
+        key: 'tagKey3',
+        value: 'tagValue3',
       },
     ],
     logs: [
@@ -75,6 +72,10 @@ describe('filterSpans', () => {
           key: 'processTagKey1',
           value: 'processTagValue2',
         },
+        {
+          key: 'processTagKey3',
+          value: 'processTag Value3',
+        },
       ],
     },
     tags: [
@@ -85,6 +86,10 @@ describe('filterSpans', () => {
       {
         key: 'tagKey1',
         value: 'tagValue2',
+      },
+      {
+        key: 'tagKey3',
+        value: 'tag Value3',
       },
     ],
     logs: [
@@ -101,6 +106,16 @@ describe('filterSpans', () => {
         ],
       },
     ],
+  };
+
+  // span3 contain empty logs
+  const spanID3 = 'span-id-3';
+  const span3 = {
+    spanID: spanID3,
+    operationName: 'operationName3',
+    process: {
+      serviceName: 'serviceName3',
+    },
   };
   const spans = [span0, span2];
 
@@ -158,11 +173,19 @@ describe('filterSpans', () => {
     expect(filterSpans('tagValue1', spans)).toEqual(new Set([spanID0, spanID2]));
     expect(filterSpans('tagValue0', spans)).toEqual(new Set([spanID0]));
     expect(filterSpans('tagValue2', spans)).toEqual(new Set([spanID2]));
+    expect(filterSpans('"tag Value3"', spans)).toEqual(new Set([spanID2]));
+  });
+
+  it("should return spans whose tags' kv.key=kv.value match a filter", () => {
+    expect(filterSpans('tagKey1=tagValue1', spans)).toEqual(new Set([spanID0]));
+    expect(filterSpans('tagKey0=tagValue0', spans)).toEqual(new Set([spanID0]));
+    expect(filterSpans('tagKey2=tagValue1', spans)).toEqual(new Set([spanID2]));
   });
 
   it("should exclude span whose tags' kv.value or kv.key match a filter if the key matches an excludeKey", () => {
     expect(filterSpans('tagValue1 -tagKey2', spans)).toEqual(new Set([spanID0]));
     expect(filterSpans('tagValue1 -tagKey1', spans)).toEqual(new Set([spanID2]));
+    expect(filterSpans('"tag Value3" -tagKey3', spans)).toEqual(new Set());
   });
 
   it('should return spans whose logs have a field whose kv.key match a filter', () => {
@@ -177,6 +200,12 @@ describe('filterSpans', () => {
     expect(filterSpans('logFieldValue2', spans)).toEqual(new Set([spanID2]));
   });
 
+  it('should return spans whose logs have a field whose kv.key=kv.value match a filter', () => {
+    expect(filterSpans('logFieldKey1=logFieldValue1', spans)).toEqual(new Set([spanID0]));
+    expect(filterSpans('logFieldKey0=logFieldValue0', spans)).toEqual(new Set([spanID0]));
+    expect(filterSpans('logFieldKey2=logFieldValue1', spans)).toEqual(new Set([spanID2]));
+  });
+
   it('should exclude span whose logs have a field whose kv.value or kv.key match a filter if the key matches an excludeKey', () => {
     expect(filterSpans('logFieldValue1 -logFieldKey2', spans)).toEqual(new Set([spanID0]));
     expect(filterSpans('logFieldValue1 -logFieldKey1', spans)).toEqual(new Set([spanID2]));
@@ -188,15 +217,32 @@ describe('filterSpans', () => {
     expect(filterSpans('processTagKey2', spans)).toEqual(new Set([spanID2]));
   });
 
+  it('should return no spans when logs is null', () => {
+    const nullSpan = { ...span0, logs: null };
+    expect(filterSpans('logFieldKey1', [nullSpan])).toEqual(new Set([]));
+  });
+
   it("should return spans whose process.processTags' kv.value match a filter", () => {
     expect(filterSpans('processTagValue1', spans)).toEqual(new Set([spanID0, spanID2]));
     expect(filterSpans('processTagValue0', spans)).toEqual(new Set([spanID0]));
     expect(filterSpans('processTagValue2', spans)).toEqual(new Set([spanID2]));
+    expect(filterSpans('"processTag Value3"', spans)).toEqual(new Set([spanID2]));
+  });
+
+  it("should return spans whose process.processTags' kv.key=kv.value match a filter", () => {
+    expect(filterSpans('processTagKey1=processTagValue1', spans)).toEqual(new Set([spanID0]));
+    expect(filterSpans('processTagKey0=processTagValue0', spans)).toEqual(new Set([spanID0]));
+    expect(filterSpans('processTagKey2=processTagValue1', spans)).toEqual(new Set([spanID2]));
   });
 
   it("should exclude span whose process.processTags' kv.value or kv.key match a filter if the key matches an excludeKey", () => {
     expect(filterSpans('processTagValue1 -processTagKey2', spans)).toEqual(new Set([spanID0]));
     expect(filterSpans('processTagValue1 -processTagKey1', spans)).toEqual(new Set([spanID2]));
+    expect(filterSpans('"processTag Value3" -processTagKey3', spans)).toEqual(new Set());
+  });
+
+  it("span without log shouldn't break filtering", () => {
+    expect(filterSpans('operationName2', [span2, span3])).toEqual(new Set([spanID2]));
   });
 
   // This test may false positive if other tests are failing

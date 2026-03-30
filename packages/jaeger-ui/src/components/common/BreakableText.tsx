@@ -1,16 +1,5 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 import * as React from 'react';
 
@@ -24,12 +13,7 @@ type Props = {
   wordRegexp?: RegExp;
 };
 
-// TODO typescript doesn't understand text or null as react nodes
-// https://github.com/Microsoft/TypeScript/issues/21699
-export default function BreakableText(
-  props: Props
-): any /* React.ReactNode /* React.ReactElement | React.ReactElement[] \*\/ */ {
-  const { className, text, wordRegexp = WORD_RX } = props;
+export default function BreakableText({ className = 'BreakableText', text, wordRegexp = WORD_RX }: Props) {
   if (!text) {
     return typeof text === 'string' ? text : null;
   }
@@ -47,8 +31,3 @@ export default function BreakableText(
   }
   return spans;
 }
-
-BreakableText.defaultProps = {
-  className: 'BreakableText',
-  wordRegexp: WORD_RX,
-};

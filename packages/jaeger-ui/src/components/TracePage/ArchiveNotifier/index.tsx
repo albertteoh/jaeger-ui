@@ -1,21 +1,12 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
-import * as React from 'react';
-import { Icon, notification } from 'antd';
+import React, { useEffect, useRef } from 'react';
+import { notification } from 'antd';
+import { IoTimeOutline } from 'react-icons/io5';
 
-import ErrorMessage from '../../common/ErrorMessage';
+import LoadingIndicator from '../../common/LoadingIndicator';
+import { Details, Message } from '../../common/ErrorMessage';
 import { TNil } from '../../../types';
 import { TraceArchive } from '../../../types/archive';
 
@@ -31,19 +22,15 @@ type Props = {
   acknowledge: () => void;
 };
 
-type State = {
-  notifiedState: ENotifiedState | null;
-};
-
-function getNextNotifiedState(props: Props) {
+function getNextNotifiedState(props: Props): ENotifiedState | null {
   const { archivedState } = props;
   if (!archivedState) {
     return null;
   }
-  if (archivedState.isLoading) {
+  if ('isLoading' in archivedState && archivedState.isLoading) {
     return ENotifiedState.Progress;
   }
-  return archivedState.isAcknowledged ? null : ENotifiedState.Outcome;
+  return 'isAcknowledged' in archivedState && archivedState.isAcknowledged ? null : ENotifiedState.Outcome;
 }
 
 function updateNotification(oldState: ENotifiedState | null, nextState: ENotifiedState | null, props: Props) {
@@ -51,38 +38,36 @@ function updateNotification(oldState: ENotifiedState | null, nextState: ENotifie
     return;
   }
   if (oldState) {
-    notification.close(oldState);
+    notification.destroy(oldState);
   }
   if (nextState === ENotifiedState.Progress) {
     notification.info({
       key: ENotifiedState.Progress,
-      description: null,
       duration: 0,
-      icon: <Icon type="loading" />,
-      message: 'Archiving trace...',
+      icon: <LoadingIndicator />,
+      title: 'Archiving trace...',
     });
     return;
   }
   const { acknowledge, archivedState } = props;
   if (nextState === ENotifiedState.Outcome) {
-    if (archivedState && archivedState.error) {
+    if (archivedState && 'error' in archivedState) {
       const { error } = archivedState;
-      notification.warn({
+      notification.warning({
         key: ENotifiedState.Outcome,
         className: 'ArchiveNotifier--errorNotification',
-        message: <ErrorMessage.Message error={error} wrap />,
-        description: <ErrorMessage.Details error={error} wrap />,
-        duration: null,
-        icon: <Icon type="clock-circle-o" className="ArchiveNotifier--errorIcon" />,
+        title: <Message error={error} wrap />,
+        description: <Details error={error} wrap />,
+        duration: false,
+        icon: <IoTimeOutline className="ArchiveNotifier--errorIcon" />,
         onClose: acknowledge,
       });
-    } else if (archivedState && archivedState.isArchived) {
+    } else if (archivedState && 'isArchived' in archivedState && archivedState.isArchived) {
       notification.success({
         key: ENotifiedState.Outcome,
-        description: null,
-        duration: null,
-        icon: <Icon type="clock-circle-o" className="ArchiveNotifier--doneIcon" />,
-        message: 'This trace has been archived.',
+        duration: false,
+        icon: <IoTimeOutline className="ArchiveNotifier--doneIcon" />,
+        title: 'This trace has been archived.',
         onClose: acknowledge,
       });
     } else {
@@ -91,32 +76,25 @@ function updateNotification(oldState: ENotifiedState | null, nextState: ENotifie
   }
 }
 
-function processProps(notifiedState: ENotifiedState | null, props: Props) {
-  const nxNotifiedState = getNextNotifiedState(props);
-  updateNotification(notifiedState, nxNotifiedState, props);
-  return nxNotifiedState;
-}
+const ArchiveNotifier: React.FC<Props> = props => {
+  const { archivedState, acknowledge } = props;
+  const notifiedStateRef = useRef<ENotifiedState | null>(null);
 
-export default class ArchiveNotifier extends React.PureComponent<Props, State> {
-  constructor(props: Props) {
-    super(props);
-    const notifiedState = processProps(null, props);
-    this.state = { notifiedState };
-  }
+  useEffect(() => {
+    const nextNotifiedState = getNextNotifiedState({ archivedState, acknowledge });
+    updateNotification(notifiedStateRef.current, nextNotifiedState, { archivedState, acknowledge });
+    notifiedStateRef.current = nextNotifiedState;
+  }, [archivedState, acknowledge]);
 
-  static getDerivedStateFromProps(props: Props, state: State) {
-    const notifiedState = processProps(state.notifiedState, props);
-    return { notifiedState };
-  }
+  useEffect(() => {
+    return () => {
+      if (notifiedStateRef.current) {
+        notification.destroy(notifiedStateRef.current);
+      }
+    };
+  }, []);
 
-  componentWillUnmount() {
-    const { notifiedState } = this.state;
-    if (notifiedState) {
-      notification.close(notifiedState);
-    }
-  }
+  return null;
+};
 
-  render() {
-    return null;
-  }
-}
+export default React.memo(ArchiveNotifier);

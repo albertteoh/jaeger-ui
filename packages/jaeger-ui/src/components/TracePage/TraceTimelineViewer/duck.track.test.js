@@ -1,18 +1,6 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
-/* eslint-disable import/first */
 jest.mock('../../../utils/tracking');
 
 import _set from 'lodash/set';
@@ -185,6 +173,27 @@ describe('middlewareHooks', () => {
       category: track.CATEGORY_LOGS_ITEM,
       noOp: true,
     },
+    {
+      msg: 'tracks a GA event for changing detail panel mode',
+      type: types.SET_DETAIL_PANEL_MODE,
+      payloadCustom: { mode: 'sidepanel' },
+      category: track.CATEGORY_PANEL_MODE,
+      action: 'sidepanel',
+    },
+    {
+      msg: 'tracks a GA event for changing timeline visibility',
+      type: types.SET_TIMELINE_BARS_VISIBLE,
+      payloadCustom: { visible: true },
+      category: track.CATEGORY_TIMELINE_VISIBLE,
+      action: 'true',
+    },
+    {
+      msg: 'tracks a GA event for resizing the side panel',
+      type: types.SET_SIDE_PANEL_WIDTH,
+      payloadCustom: { width: columnWidth.real },
+      category: track.CATEGORY_COLUMN,
+      extraTrackArgs: [columnWidth.tracked],
+    },
   ];
 
   cases.forEach(
@@ -229,7 +238,10 @@ describe('middlewareHooks', () => {
         types.DETAIL_LOG_ITEM_TOGGLE,
         types.EXPAND_ALL,
         types.EXPAND_ONE,
+        types.SET_DETAIL_PANEL_MODE,
+        types.SET_SIDE_PANEL_WIDTH,
         types.SET_SPAN_NAME_COLUMN_WIDTH,
+        types.SET_TIMELINE_BARS_VISIBLE,
       ].sort()
     );
   });

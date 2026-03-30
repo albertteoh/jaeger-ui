@@ -1,118 +1,127 @@
 // Copyright (c) 2019 Uber Technologies, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
-import * as React from 'react';
-import { Icon, Input } from 'antd';
-import { History as RouterHistory, Location } from 'history';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { Input, InputRef } from 'antd';
+import { IoClose } from 'react-icons/io5';
+import { useNavigate, useLocation } from 'react-router-dom';
 import _debounce from 'lodash/debounce';
 import _isString from 'lodash/isString';
-import queryString from 'query-string';
-import { connect } from 'react-redux';
-import { RouteComponentProps, withRouter } from 'react-router-dom';
 
 import updateUiFind from '../../utils/update-ui-find';
 import { TNil, ReduxState } from '../../types/index';
+import parseQuery from '../../utils/parseQuery';
 
-type TOwnProps = RouteComponentProps<any> & {
+type TOwnProps = {
   allowClear?: boolean;
-  forwardedRef?: React.Ref<Input>;
-  inputProps: Record<string, any>;
-  history: RouterHistory;
-  location: Location;
-  match: any;
+  inputProps?: Record<string, any>;
   trackFindFunction?: (str: string | TNil) => void;
+  uiFind?: string;
 };
+
+type TProps = TOwnProps;
+
+const defaultProps: Partial<TProps> = {
+  inputProps: {},
+};
+
+export const UnconnectedUiFindInput = React.forwardRef<InputRef, TProps>((props, ref) => {
+  const {
+    allowClear,
+    inputProps,
+    trackFindFunction,
+    uiFind: uiFindProp,
+  } = {
+    ...defaultProps,
+    ...props,
+  };
+
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // derive uiFind from the URL when not provided as a prop.
+  const prevUiFind = uiFindProp !== undefined ? uiFindProp : parseUiFind(location.search);
+  const [ownInputValue, setOwnInputValue] = useState<string | undefined>(undefined);
+
+  const updateUiFindQueryParam = useMemo(
+    () =>
+      _debounce((uiFind?: string) => {
+        if (uiFind === prevUiFind || (!prevUiFind && !uiFind)) return;
+        updateUiFind({
+          location,
+          navigate,
+          trackFindFunction,
+          uiFind,
+        });
+      }, 250),
+    [navigate, location, prevUiFind, trackFindFunction]
+  );
+
+  useEffect(() => {
+    return () => {
+      updateUiFindQueryParam.cancel();
+    };
+  }, [updateUiFindQueryParam]);
+
+  const clearUiFind = useCallback(() => {
+    updateUiFindQueryParam();
+    updateUiFindQueryParam.flush();
+  }, [updateUiFindQueryParam]);
+
+  const handleInputBlur = useCallback(() => {
+    updateUiFindQueryParam.flush();
+    setOwnInputValue(undefined);
+  }, [updateUiFindQueryParam]);
+
+  const handleInputChange = useCallback(
+    (evt: React.ChangeEvent<HTMLInputElement>) => {
+      const { value } = evt.target;
+      updateUiFindQueryParam(value);
+      setOwnInputValue(value);
+    },
+    [updateUiFindQueryParam]
+  );
+
+  const inputValue = _isString(ownInputValue) ? ownInputValue : prevUiFind;
+  const suffix = (
+    <>
+      {allowClear && inputValue && inputValue.length > 0 && (
+        <IoClose data-testid="clear-icon" onClick={clearUiFind} />
+      )}
+      {inputProps?.suffix}
+    </>
+  );
+
+  return (
+    <Input
+      placeholder="Find..."
+      {...inputProps}
+      onBlur={handleInputBlur}
+      onChange={handleInputChange}
+      ref={ref}
+      suffix={suffix}
+      value={inputValue}
+      allowClear
+    />
+  );
+});
+
+UnconnectedUiFindInput.displayName = 'UnconnectedUiFindInput';
 
 export type TExtractUiFindFromStateReturn = {
   uiFind: string | undefined;
 };
 
-type TProps = TOwnProps & TExtractUiFindFromStateReturn;
-
-type StateType = {
-  ownInputValue: string | undefined;
-};
-
-export class UnconnectedUiFindInput extends React.PureComponent<TProps, StateType> {
-  static defaultProps: Partial<TProps> = {
-    forwardedRef: undefined,
-    inputProps: {},
-    trackFindFunction: undefined,
-    uiFind: undefined,
-  };
-
-  state = {
-    ownInputValue: undefined,
-  };
-
-  updateUiFindQueryParam = _debounce((uiFind?: string) => {
-    const { history, location, uiFind: prevUiFind, trackFindFunction } = this.props;
-    if (uiFind === prevUiFind || (!prevUiFind && !uiFind)) return;
-    updateUiFind({
-      location,
-      history,
-      trackFindFunction,
-      uiFind,
-    });
-  }, 250);
-
-  clearUiFind = () => {
-    this.updateUiFindQueryParam();
-    this.updateUiFindQueryParam.flush();
-  };
-
-  handleInputBlur = () => {
-    this.updateUiFindQueryParam.flush();
-    this.setState({ ownInputValue: undefined });
-  };
-
-  handleInputChange = (evt: React.ChangeEvent<HTMLInputElement>) => {
-    const { value } = evt.target;
-    this.updateUiFindQueryParam(value);
-    this.setState({ ownInputValue: value });
-  };
-
-  render() {
-    const { allowClear, forwardedRef, inputProps } = this.props;
-
-    const inputValue = _isString(this.state.ownInputValue) ? this.state.ownInputValue : this.props.uiFind;
-    const suffix = (
-      <>
-        {allowClear && inputValue && inputValue.length && <Icon type="close" onClick={this.clearUiFind} />}
-        {inputProps.suffix}
-      </>
-    );
-
-    return (
-      <Input
-        autosize={null}
-        placeholder="Find..."
-        {...inputProps}
-        onBlur={this.handleInputBlur}
-        onChange={this.handleInputChange}
-        ref={forwardedRef}
-        suffix={suffix}
-        value={inputValue}
-      />
-    );
-  }
+export function parseUiFind(search: string): string | undefined {
+  const { uiFind } = parseQuery(search);
+  return Array.isArray(uiFind) ? uiFind.join(' ') : uiFind;
 }
 
-export function extractUiFindFromState(state: ReduxState): TExtractUiFindFromStateReturn {
-  const { uiFind: uiFindFromUrl } = queryString.parse(state.router.location.search);
-  const uiFind = Array.isArray(uiFindFromUrl) ? uiFindFromUrl.join(' ') : uiFindFromUrl;
-  return { uiFind };
+// This is used by various components to extract uiFind from the URL.
+// The "fromState" part of the name is a legacy leftover from when
+// this was reading from Redux state.
+export function extractUiFindFromState(_unused: any = null): TExtractUiFindFromStateReturn {
+  return { uiFind: parseUiFind(window.location.search) };
 }
 
-export default withRouter(connect(extractUiFindFromState)(UnconnectedUiFindInput));
+export default UnconnectedUiFindInput as any;
